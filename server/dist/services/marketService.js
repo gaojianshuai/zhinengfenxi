@@ -1,0 +1,961 @@
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.setForceRefresh = setForceRefresh;
+exports.getMarketOverview = getMarketOverview;
+exports.getCoinDetail = getCoinDetail;
+const axios_1 = __importDefault(require("axios"));
+const fs = __importStar(require("fs"));
+const path = __importStar(require("path"));
+// 多个免费API源，确保稳定性
+const API_SOURCES = {
+    coinmarketcap: "https://pro-api.coinmarketcap.com/v1",
+    cryptocompare: "https://min-api.cryptocompare.com/data",
+    coingecko: "https://api.coingecko.com/api/v3",
+    coincap: "https://api.coincap.io/v2",
+    binance: "https://api.binance.com/api/v3"
+};
+// API 密钥
+const CRYPTOCOMPARE_API_KEY = "32a4a0ad3f972271ffdfc992ba2a63b0a9fa9e17558836cb6dff452f187233cb";
+const COINMARKETCAP_API_KEY = "931662f2eaa4447685061867557d06e6";
+// CoinMarketCap API 获取数据（优先使用，因为有API密钥）
+async function fetchFromCoinMarketCap() {
+    try {
+        const url = `${API_SOURCES.coinmarketcap}/cryptocurrency/listings/latest`;
+        console.log(`[CoinMarketCap] 请求URL: ${url}`);
+        const startTime = Date.now();
+        const response = await axios_1.default.get(url, {
+            params: {
+                start: 1,
+                limit: 50,
+                convert: 'USD',
+                sort: 'market_cap',
+                sort_dir: 'desc'
+            },
+            timeout: 20000,
+            headers: {
+                'Accept': 'application/json',
+                'X-CMC_PRO_API_KEY': COINMARKETCAP_API_KEY
+            },
+            validateStatus: (status) => status < 500
+        });
+        const duration = Date.now() - startTime;
+        if (!response.data || !response.data.data || !Array.isArray(response.data.data)) {
+            throw new Error("CoinMarketCap返回数据格式错误");
+        }
+        const coins = response.data.data;
+        console.log(`[CoinMarketCap] ✅ 成功! 耗时: ${duration}ms, 数据量: ${coins.length}`);
+        // 转换CoinMarketCap格式到统一格式
+        const result = coins.map((coin) => {
+            const quote = coin.quote?.USD || {};
+            return {
+                id: coin.slug || coin.symbol.toLowerCase(),
+                symbol: coin.symbol.toLowerCase(),
+                name: coin.name,
+                current_price: quote.price || 0,
+                price_change_percentage_24h: quote.percent_change_24h || 0,
+                market_cap: quote.market_cap || 0,
+                total_volume: quote.volume_24h || 0,
+                sparkline_in_7d: null // CoinMarketCap需要额外请求获取历史数据
+            };
+        }).filter((coin) => coin.current_price > 0 && coin.market_cap > 0);
+        // 尝试获取7日历史数据生成sparkline（简化处理，使用当前价格生成趋势）
+        // CoinMarketCap的历史数据API需要额外调用，这里先使用当前价格生成
+        return result.map((coin) => {
+            // 基于24h涨跌幅生成7日走势趋势
+            const trendFactor = 1 + (coin.price_change_percentage_24h / 100);
+            coin.sparkline_in_7d = {
+                price: Array.from({ length: 7 }, (_, i) => {
+                    const daysAgo = 6 - i;
+                    const historicalFactor = trendFactor * (1 - (daysAgo * 0.02)); // 模拟历史趋势
+                    return coin.current_price * historicalFactor;
+                })
+            };
+            return coin;
+        });
+    }
+    catch (error) {
+        const errorDetails = {
+            message: error.message,
+            code: error.code,
+            response: error.response ? {
+                status: error.response.status,
+                statusText: error.response.statusText,
+                data: error.response.data
+            } : null
+        };
+        console.error(`[CoinMarketCap] ❌ 详细错误:`, JSON.stringify(errorDetails, null, 2));
+        throw error;
+    }
+}
+// CryptoCompare API 获取数据（优先使用，因为有API密钥）
+async function fetchFromCryptoCompare() {
+    try {
+        // 获取前50大市值币种
+        const url = `${API_SOURCES.cryptocompare}/top/mktcapfull`;
+        console.log(`[CryptoCompare] 请求URL: ${url}`);
+        const startTime = Date.now();
+        const response = await axios_1.default.get(url, {
+            params: {
+                limit: 50,
+                tsym: 'USD'
+            },
+            timeout: 20000,
+            headers: {
+                'Accept': 'application/json',
+                'authorization': `Apikey ${CRYPTOCOMPARE_API_KEY}`
+            },
+            validateStatus: (status) => status < 500
+        });
+        const duration = Date.now() - startTime;
+        if (!response.data || !response.data.Data || !Array.isArray(response.data.Data)) {
+            throw new Error("CryptoCompare返回数据格式错误");
+        }
+        const coins = response.data.Data;
+        console.log(`[CryptoCompare] ✅ 成功! 耗时: ${duration}ms, 数据量: ${coins.length}`);
+        // 转换CryptoCompare格式到统一格式
+        const result = coins.map((item) => {
+            const coinInfo = item.CoinInfo;
+            const rawData = item.RAW?.USD || {};
+            const displayData = item.DISPLAY?.USD || {};
+            // 提取价格数据
+            const price = rawData.PRICE || 0;
+            const change24h = rawData.CHANGEPCT24HOUR || 0;
+            const marketCap = rawData.MKTCAP || 0;
+            const volume24h = rawData.VOLUME24HOUR || 0;
+            return {
+                id: coinInfo.Name.toLowerCase(),
+                symbol: coinInfo.Name.toLowerCase(),
+                name: coinInfo.FullName || coinInfo.Name,
+                current_price: parseFloat(price.toString()),
+                price_change_percentage_24h: parseFloat(change24h.toString()),
+                market_cap: parseFloat(marketCap.toString()),
+                total_volume: parseFloat(volume24h.toString()),
+                sparkline_in_7d: null // 稍后获取
+            };
+        }).filter((coin) => coin.current_price > 0 && coin.market_cap > 0);
+        // 批量获取7日历史数据生成sparkline（限制并发数）
+        const BATCH_SIZE = 10;
+        const sparklineData = [];
+        for (let i = 0; i < result.length; i += BATCH_SIZE) {
+            const batch = result.slice(i, i + BATCH_SIZE);
+            const batchPromises = batch.map(async (coin) => {
+                try {
+                    const histResponse = await axios_1.default.get(`${API_SOURCES.cryptocompare}/v2/histoday`, {
+                        params: {
+                            fsym: coin.symbol.toUpperCase(),
+                            tsym: 'USD',
+                            limit: 7
+                        },
+                        timeout: 8000,
+                        headers: {
+                            'authorization': `Apikey ${CRYPTOCOMPARE_API_KEY}`
+                        }
+                    });
+                    if (histResponse.data?.Data?.Data && Array.isArray(histResponse.data.Data.Data)) {
+                        coin.sparkline_in_7d = {
+                            price: histResponse.data.Data.Data.map((d) => d.close)
+                        };
+                    }
+                    else {
+                        // 如果获取失败，使用当前价格生成
+                        coin.sparkline_in_7d = { price: Array(7).fill(coin.current_price) };
+                    }
+                }
+                catch (e) {
+                    // 如果获取历史数据失败，使用当前价格生成
+                    coin.sparkline_in_7d = { price: Array(7).fill(coin.current_price) };
+                }
+                return coin;
+            });
+            const batchResults = await Promise.all(batchPromises);
+            sparklineData.push(...batchResults);
+        }
+        return sparklineData;
+    }
+    catch (error) {
+        const errorDetails = {
+            message: error.message,
+            code: error.code,
+            response: error.response ? {
+                status: error.response.status,
+                statusText: error.response.statusText,
+                data: error.response.data
+            } : null
+        };
+        console.error(`[CryptoCompare] ❌ 详细错误:`, JSON.stringify(errorDetails, null, 2));
+        throw error;
+    }
+}
+// CoinGecko API 获取数据
+async function fetchFromCoinGecko(includeSparkline = false) {
+    try {
+        const url = `${API_SOURCES.coingecko}/coins/markets`;
+        console.log(`[CoinGecko] 请求URL: ${url}, sparkline: ${includeSparkline}`);
+        const startTime = Date.now();
+        // 配置axios，支持代理（如果设置了环境变量）
+        const axiosConfig = {
+            params: {
+                vs_currency: "usd",
+                order: "market_cap_desc",
+                per_page: 50,
+                page: 1,
+                sparkline: includeSparkline,
+                price_change_percentage: "24h"
+            },
+            timeout: 20000, // 20秒超时
+            headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            },
+            validateStatus: (status) => status < 500
+        };
+        // 如果设置了代理环境变量，使用代理
+        if (process.env.HTTP_PROXY || process.env.HTTPS_PROXY) {
+            axiosConfig.proxy = {
+                host: process.env.HTTP_PROXY?.split(':')[0] || process.env.HTTPS_PROXY?.split(':')[0] || '127.0.0.1',
+                port: parseInt(process.env.HTTP_PROXY?.split(':')[1] || process.env.HTTPS_PROXY?.split(':')[1] || '7890')
+            };
+            console.log(`[CoinGecko] 使用代理: ${JSON.stringify(axiosConfig.proxy)}`);
+        }
+        const response = await axios_1.default.get(url, axiosConfig);
+        const duration = Date.now() - startTime;
+        const dataLength = Array.isArray(response.data) ? response.data.length : 0;
+        console.log(`[CoinGecko] ✅ 成功! 耗时: ${duration}ms, 状态码: ${response.status}, 数据量: ${dataLength}`);
+        if (!Array.isArray(response.data) || response.data.length === 0) {
+            throw new Error("CoinGecko返回空数据");
+        }
+        return response.data;
+    }
+    catch (error) {
+        const errorDetails = {
+            message: error.message,
+            code: error.code,
+            response: error.response ? {
+                status: error.response.status,
+                statusText: error.response.statusText
+            } : null
+        };
+        console.error(`[CoinGecko] ❌ 详细错误:`, JSON.stringify(errorDetails, null, 2));
+        throw error;
+    }
+}
+// CoinCap API 作为备用（免费，无需API key）
+async function fetchFromCoinCap() {
+    try {
+        const url = `${API_SOURCES.coincap}/assets`;
+        console.log(`[CoinCap] 请求URL: ${url}`);
+        const startTime = Date.now();
+        const response = await axios_1.default.get(url, {
+            params: {
+                limit: 50
+            },
+            timeout: 15000, // 增加到15秒
+            headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0'
+            },
+            validateStatus: (status) => status < 500
+        });
+        const duration = Date.now() - startTime;
+        console.log(`[CoinCap] 成功! 耗时: ${duration}ms, 状态码: ${response.status}`);
+        // 转换CoinCap格式到统一格式
+        const assets = response.data.data || [];
+        if (assets.length === 0) {
+            throw new Error("CoinCap返回空数据");
+        }
+        return assets.map((asset) => ({
+            id: asset.id,
+            symbol: asset.symbol.toLowerCase(),
+            name: asset.name,
+            current_price: parseFloat(asset.priceUsd || 0),
+            price_change_percentage_24h: parseFloat(asset.changePercent24Hr || 0),
+            market_cap: parseFloat(asset.marketCapUsd || 0),
+            total_volume: parseFloat(asset.volumeUsd24Hr || 0),
+            sparkline_in_7d: null // CoinCap不提供sparkline
+        }));
+    }
+    catch (error) {
+        const errorDetails = {
+            message: error.message,
+            code: error.code,
+            response: error.response ? {
+                status: error.response.status,
+                statusText: error.response.statusText
+            } : null
+        };
+        console.error(`[CoinCap] 详细错误:`, JSON.stringify(errorDetails, null, 2));
+        throw error;
+    }
+}
+// Binance API 作为备用（获取价格数据）
+async function fetchFromBinance() {
+    try {
+        const url = `${API_SOURCES.binance}/ticker/24hr`;
+        console.log(`[Binance] 请求URL: ${url}`);
+        const startTime = Date.now();
+        const tickerResponse = await axios_1.default.get(url, {
+            timeout: 15000, // 增加到15秒
+            headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0'
+            },
+            validateStatus: (status) => status < 500
+        });
+        const duration = Date.now() - startTime;
+        console.log(`[Binance] 成功! 耗时: ${duration}ms, 状态码: ${tickerResponse.status}`);
+        const tickers = tickerResponse.data;
+        if (!Array.isArray(tickers) || tickers.length === 0) {
+            throw new Error("Binance返回空数据");
+        }
+        // 只取USDT交易对，按成交量排序
+        const usdtPairs = tickers
+            .filter((t) => t.symbol && t.symbol.endsWith('USDT'))
+            .sort((a, b) => parseFloat(b.quoteVolume || 0) - parseFloat(a.quoteVolume || 0))
+            .slice(0, 50);
+        if (usdtPairs.length === 0) {
+            throw new Error("Binance没有找到USDT交易对");
+        }
+        return usdtPairs.map((ticker) => {
+            const symbol = ticker.symbol.replace('USDT', '').toLowerCase();
+            return {
+                id: symbol,
+                symbol: symbol,
+                name: symbol.toUpperCase(),
+                current_price: parseFloat(ticker.lastPrice || 0),
+                price_change_percentage_24h: parseFloat(ticker.priceChangePercent || 0),
+                market_cap: parseFloat(ticker.quoteVolume || 0) * 10, // 估算市值
+                total_volume: parseFloat(ticker.quoteVolume || 0),
+                sparkline_in_7d: null
+            };
+        });
+    }
+    catch (error) {
+        const errorDetails = {
+            message: error.message,
+            code: error.code,
+            response: error.response ? {
+                status: error.response.status,
+                statusText: error.response.statusText
+            } : null
+        };
+        console.error(`[Binance] 详细错误:`, JSON.stringify(errorDetails, null, 2));
+        throw error;
+    }
+}
+// 从本地JSON文件加载数据（最后备用）
+function loadLocalData() {
+    try {
+        const dataPath = path.join(__dirname, '../data/coins-backup.json');
+        if (fs.existsSync(dataPath)) {
+            const fileContent = fs.readFileSync(dataPath, 'utf-8');
+            const data = JSON.parse(fileContent);
+            console.log(`[本地数据] 成功加载 ${data.length} 条数据`);
+            return data;
+        }
+    }
+    catch (error) {
+        console.error(`[本地数据] 加载失败: ${error.message}`);
+    }
+    return [];
+}
+// 存储上次的价格，用于生成更真实的波动
+const priceCache = new Map();
+// 生成智能解读函数
+function generateInsight(params) {
+    const { name, priceChange24h, sparklineData, marketCap, totalVolume, score, recommendation, currentPrice } = params;
+    // 分析7日走势趋势
+    let trendAnalysis = "";
+    let volatility = "";
+    if (sparklineData && sparklineData.length >= 7) {
+        const firstPrice = sparklineData[0];
+        const lastPrice = sparklineData[sparklineData.length - 1];
+        const weekChange = ((lastPrice - firstPrice) / firstPrice) * 100;
+        // 计算波动率
+        const prices = sparklineData;
+        const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
+        const variance = prices.reduce((sum, p) => sum + Math.pow(p - avgPrice, 2), 0) / prices.length;
+        const stdDev = Math.sqrt(variance);
+        const volatilityPercent = (stdDev / avgPrice) * 100;
+        if (weekChange > 10) {
+            trendAnalysis = `过去7天累计上涨${weekChange.toFixed(1)}%，呈现强劲的上升趋势`;
+        }
+        else if (weekChange > 5) {
+            trendAnalysis = `过去7天累计上涨${weekChange.toFixed(1)}%，保持稳定的上升势头`;
+        }
+        else if (weekChange > 0) {
+            trendAnalysis = `过去7天累计上涨${weekChange.toFixed(1)}%，呈现温和的上升趋势`;
+        }
+        else if (weekChange > -5) {
+            trendAnalysis = `过去7天累计${weekChange.toFixed(1)}%，价格在区间内震荡整理`;
+        }
+        else if (weekChange > -10) {
+            trendAnalysis = `过去7天累计下跌${Math.abs(weekChange).toFixed(1)}%，出现小幅回调`;
+        }
+        else {
+            trendAnalysis = `过去7天累计下跌${Math.abs(weekChange).toFixed(1)}%，呈现明显的下跌趋势`;
+        }
+        // 波动率分析
+        if (volatilityPercent > 8) {
+            volatility = "波动较大";
+        }
+        else if (volatilityPercent > 4) {
+            volatility = "波动适中";
+        }
+        else {
+            volatility = "波动较小";
+        }
+    }
+    // 24小时表现分析
+    let day24Analysis = "";
+    if (priceChange24h > 10) {
+        day24Analysis = `24小时暴涨${priceChange24h.toFixed(2)}%，市场情绪极度乐观，资金大量涌入`;
+    }
+    else if (priceChange24h > 5) {
+        day24Analysis = `24小时大涨${priceChange24h.toFixed(2)}%，市场情绪积极，买盘力量强劲`;
+    }
+    else if (priceChange24h > 2) {
+        day24Analysis = `24小时上涨${priceChange24h.toFixed(2)}%，市场表现稳健，多头占据优势`;
+    }
+    else if (priceChange24h > 0) {
+        day24Analysis = `24小时微涨${priceChange24h.toFixed(2)}%，市场表现平稳，多空力量相对均衡`;
+    }
+    else if (priceChange24h > -2) {
+        day24Analysis = `24小时微跌${Math.abs(priceChange24h).toFixed(2)}%，市场表现平稳，短期调整正常`;
+    }
+    else if (priceChange24h > -5) {
+        day24Analysis = `24小时下跌${Math.abs(priceChange24h).toFixed(2)}%，市场出现调整，空头力量增强`;
+    }
+    else if (priceChange24h > -10) {
+        day24Analysis = `24小时大跌${Math.abs(priceChange24h).toFixed(2)}%，市场情绪转弱，抛压明显增加`;
+    }
+    else {
+        day24Analysis = `24小时暴跌${Math.abs(priceChange24h).toFixed(2)}%，市场情绪极度悲观，资金大量流出`;
+    }
+    // 流动性分析
+    const volumeRatio = marketCap > 0 ? (totalVolume / marketCap) * 100 : 0;
+    let liquidityAnalysis = "";
+    if (volumeRatio > 15) {
+        liquidityAnalysis = "成交活跃，流动性极佳，资金进出顺畅";
+    }
+    else if (volumeRatio > 8) {
+        liquidityAnalysis = "成交较为活跃，流动性良好，市场参与度高";
+    }
+    else if (volumeRatio > 4) {
+        liquidityAnalysis = "成交正常，流动性适中，市场参与度一般";
+    }
+    else {
+        liquidityAnalysis = "成交相对清淡，流动性一般，需注意大单冲击";
+    }
+    // 市值规模分析
+    let marketCapAnalysis = "";
+    const marketCapB = marketCap / 1e9;
+    if (marketCapB > 100) {
+        marketCapAnalysis = "属于超大型市值币种，市场地位稳固，风险相对较低";
+    }
+    else if (marketCapB > 10) {
+        marketCapAnalysis = "属于大型市值币种，市场认可度高，具备一定抗风险能力";
+    }
+    else if (marketCapB > 1) {
+        marketCapAnalysis = "属于中型市值币种，成长空间较大，但波动性也相对较高";
+    }
+    else {
+        marketCapAnalysis = "属于小型市值币种，潜在收益高但风险较大，需谨慎评估";
+    }
+    // 综合评分解读
+    let scoreAnalysis = "";
+    if (score > 0.75) {
+        scoreAnalysis = "综合评分优秀，多维度指标表现强劲，短期投资价值较高";
+    }
+    else if (score > 0.6) {
+        scoreAnalysis = "综合评分良好，各项指标表现均衡，具备一定的投资价值";
+    }
+    else if (score > 0.4) {
+        scoreAnalysis = "综合评分中等，指标表现一般，建议观望等待更好时机";
+    }
+    else {
+        scoreAnalysis = "综合评分较低，多项指标表现较弱，建议谨慎对待";
+    }
+    // 投资建议解读
+    let recommendationAnalysis = "";
+    switch (recommendation) {
+        case "strong_buy":
+            recommendationAnalysis = "强烈买入：当前价格和趋势显示强烈的买入信号，适合积极配置";
+            break;
+        case "buy":
+            recommendationAnalysis = "买入：市场表现积极，适合适量配置，建议分批建仓";
+            break;
+        case "hold":
+            recommendationAnalysis = "观望：市场表现中性，建议保持现有仓位，等待更明确的信号";
+            break;
+        case "sell":
+            recommendationAnalysis = "减持/卖出：市场表现疲弱，建议减仓或离场，控制风险";
+            break;
+    }
+    // 组合生成最终解读
+    const parts = [];
+    // 优先显示24小时表现
+    parts.push(day24Analysis);
+    // 如果有走势数据，添加趋势分析
+    if (trendAnalysis) {
+        parts.push(`${trendAnalysis}，${volatility}。`);
+    }
+    // 添加流动性分析
+    parts.push(liquidityAnalysis);
+    // 添加市值分析
+    parts.push(marketCapAnalysis);
+    // 添加评分和建议
+    parts.push(`${scoreAnalysis}。${recommendationAnalysis}`);
+    return parts.join("。") + "。";
+}
+// 生成模拟数据作为最后备用（确保系统始终可用）
+// 使用缓存价格生成更真实的实时波动效果
+function generateMockData() {
+    const topCoins = [
+        { id: 'bitcoin', symbol: 'btc', name: 'Bitcoin', basePrice: 45000 },
+        { id: 'ethereum', symbol: 'eth', name: 'Ethereum', basePrice: 2800 },
+        { id: 'binancecoin', symbol: 'bnb', name: 'BNB', basePrice: 320 },
+        { id: 'solana', symbol: 'sol', name: 'Solana', basePrice: 95 },
+        { id: 'cardano', symbol: 'ada', name: 'Cardano', basePrice: 0.55 },
+        { id: 'ripple', symbol: 'xrp', name: 'XRP', basePrice: 0.62 },
+        { id: 'polkadot', symbol: 'dot', name: 'Polkadot', basePrice: 7.2 },
+        { id: 'dogecoin', symbol: 'doge', name: 'Dogecoin', basePrice: 0.08 },
+        { id: 'avalanche', symbol: 'avax', name: 'Avalanche', basePrice: 38 },
+        { id: 'chainlink', symbol: 'link', name: 'Chainlink', basePrice: 14.5 },
+        { id: 'polygon', symbol: 'matic', name: 'Polygon', basePrice: 0.85 },
+        { id: 'litecoin', symbol: 'ltc', name: 'Litecoin', basePrice: 72 },
+        { id: 'uniswap', symbol: 'uni', name: 'Uniswap', basePrice: 6.5 },
+        { id: 'ethereum-classic', symbol: 'etc', name: 'Ethereum Classic', basePrice: 25 },
+        { id: 'stellar', symbol: 'xlm', name: 'Stellar', basePrice: 0.12 },
+        { id: 'cosmos', symbol: 'atom', name: 'Cosmos', basePrice: 9.8 },
+        { id: 'algorand', symbol: 'algo', name: 'Algorand', basePrice: 0.18 },
+        { id: 'vechain', symbol: 'vet', name: 'VeChain', basePrice: 0.035 },
+        { id: 'filecoin', symbol: 'fil', name: 'Filecoin', basePrice: 5.2 },
+        { id: 'tron', symbol: 'trx', name: 'TRON', basePrice: 0.11 },
+        { id: 'monero', symbol: 'xmr', name: 'Monero', basePrice: 165 },
+        { id: 'eos', symbol: 'eos', name: 'EOS', basePrice: 0.75 },
+        { id: 'aave', symbol: 'aave', name: 'Aave', basePrice: 88 },
+        { id: 'theta', symbol: 'theta', name: 'Theta Network', basePrice: 1.05 },
+        { id: 'crypto-com-chain', symbol: 'cro', name: 'Crypto.com Coin', basePrice: 0.095 },
+        { id: 'hedera-hashgraph', symbol: 'hbar', name: 'Hedera', basePrice: 0.075 },
+        { id: 'tezos', symbol: 'xtz', name: 'Tezos', basePrice: 0.95 },
+        { id: 'elrond-erd-2', symbol: 'egld', name: 'MultiversX', basePrice: 42 },
+        { id: 'the-graph', symbol: 'grt', name: 'The Graph', basePrice: 0.15 },
+        { id: 'helium', symbol: 'hnt', name: 'Helium', basePrice: 4.8 },
+        { id: 'fantom', symbol: 'ftm', name: 'Fantom', basePrice: 0.35 },
+        { id: 'near', symbol: 'near', name: 'NEAR Protocol', basePrice: 3.2 },
+        { id: 'decentraland', symbol: 'mana', name: 'Decentraland', basePrice: 0.45 },
+        { id: 'gala', symbol: 'gala', name: 'Gala', basePrice: 0.025 },
+        { id: 'axie-infinity', symbol: 'axs', name: 'Axie Infinity', basePrice: 7.8 },
+        { id: 'the-sandbox', symbol: 'sand', name: 'The Sandbox', basePrice: 0.42 },
+        { id: 'chiliz', symbol: 'chz', name: 'Chiliz', basePrice: 0.085 },
+        { id: 'enjin-coin', symbol: 'enj', name: 'Enjin Coin', basePrice: 0.32 },
+        { id: 'flow', symbol: 'flow', name: 'Flow', basePrice: 0.75 },
+        { id: 'wax', symbol: 'waxp', name: 'WAX', basePrice: 0.055 },
+        { id: 'immutable-x', symbol: 'imx', name: 'Immutable X', basePrice: 1.25 },
+        { id: 'loopring', symbol: 'lrc', name: 'Loopring', basePrice: 0.22 },
+        { id: 'zilliqa', symbol: 'zil', name: 'Zilliqa', basePrice: 0.021 },
+        { id: 'waves', symbol: 'waves', name: 'Waves', basePrice: 2.5 },
+        { id: 'dash', symbol: 'dash', name: 'Dash', basePrice: 32 },
+        { id: 'maker', symbol: 'mkr', name: 'Maker', basePrice: 2100 },
+        { id: 'compound-governance-token', symbol: 'comp', name: 'Compound', basePrice: 52 },
+        { id: 'yearn-finance', symbol: 'yfi', name: 'yearn.finance', basePrice: 6800 },
+        { id: 'sushi', symbol: 'sushi', name: 'SushiSwap', basePrice: 1.15 },
+        { id: 'synthetix-network-token', symbol: 'snx', name: 'Synthetix', basePrice: 2.8 }
+    ];
+    const now = Date.now();
+    return topCoins.map((coin, index) => {
+        // 获取上次的价格，如果没有则使用基础价格
+        const cached = priceCache.get(coin.id);
+        const lastPrice = cached?.price || coin.basePrice;
+        const timeSinceLastUpdate = cached ? (now - cached.timestamp) / 1000 / 60 : 1; // 分钟
+        // 生成更真实的波动：基于上次价格，小幅度随机波动
+        // 每次刷新会有小幅变化（±0.5%到±2%）
+        const volatility = 0.01 + (Math.random() * 0.02); // 1%到3%的波动
+        const direction = Math.random() > 0.5 ? 1 : -1;
+        const change = lastPrice * volatility * direction;
+        const currentPrice = Math.max(0.0001, lastPrice + change);
+        // 计算24小时涨跌幅（基于当前价格和基础价格的差异）
+        const priceChange24h = ((currentPrice - coin.basePrice) / coin.basePrice) * 100;
+        // 基于价格计算市值和成交量（更合理的关系）
+        const marketCap = currentPrice * (coin.basePrice > 1000 ? 20000000 :
+            coin.basePrice > 100 ? 50000000 :
+                coin.basePrice > 1 ? 100000000 : 500000000);
+        const totalVolume = marketCap * (0.05 + Math.random() * 0.1); // 5%-15%的成交量
+        // 生成更真实的7日走势图（基于当前价格，有趋势性）
+        const sparklineData = Array.from({ length: 7 }, (_, i) => {
+            const daysAgo = 6 - i;
+            // 越早的价格可能偏离当前价格更多
+            const historicalVariation = (Math.random() - 0.5) * 0.1 * (1 + daysAgo * 0.1);
+            return currentPrice * (1 + historicalVariation);
+        });
+        // 更新缓存
+        priceCache.set(coin.id, { price: currentPrice, timestamp: now });
+        return {
+            id: coin.id,
+            symbol: coin.symbol,
+            name: coin.name,
+            current_price: Math.round(currentPrice * 10000) / 10000, // 保留4位小数
+            price_change_percentage_24h: Math.round(priceChange24h * 100) / 100,
+            market_cap: Math.round(marketCap),
+            total_volume: Math.round(totalVolume),
+            sparkline_in_7d: { price: sparklineData.map(p => Math.round(p * 10000) / 10000) }
+        };
+    });
+}
+// 缓存可用的API源，避免每次都尝试
+let cachedAPISource = null;
+// 强制刷新标志，用于手动刷新时清除缓存
+let forceRefresh = false;
+function setForceRefresh(value) {
+    forceRefresh = value;
+}
+async function getMarketOverview() {
+    // 如果强制刷新，清除缓存，重新尝试所有API
+    if (forceRefresh) {
+        cachedAPISource = null;
+        forceRefresh = false;
+        console.log("🔄 强制刷新模式：清除缓存，重新尝试所有API");
+    }
+    // 如果已经找到可用的API源，直接使用（非强制刷新时）
+    if (cachedAPISource === 'cryptocompare') {
+        try {
+            const data = await fetchFromCryptoCompare();
+            if (data && Array.isArray(data) && data.length > 0) {
+                return processCoinData(data);
+            }
+        }
+        catch (error) {
+            cachedAPISource = null;
+            console.log("缓存的CryptoCompare API源失败，重新尝试");
+        }
+    }
+    else if (cachedAPISource === 'coinmarketcap') {
+        try {
+            const data = await fetchFromCoinMarketCap();
+            if (data && Array.isArray(data) && data.length > 0) {
+                return processCoinData(data);
+            }
+        }
+        catch (error) {
+            cachedAPISource = null;
+            console.log("缓存的CoinMarketCap API源失败，重新尝试");
+        }
+    }
+    else if (cachedAPISource === 'coingecko') {
+        try {
+            const data = await fetchFromCoinGecko(false);
+            if (data && Array.isArray(data) && data.length > 0) {
+                return processCoinData(data);
+            }
+        }
+        catch (error) {
+            // 如果缓存的API源也失败了，清除缓存，使用模拟数据
+            cachedAPISource = null;
+            console.log("缓存的API源失败，切换到模拟数据");
+        }
+    }
+    else if (cachedAPISource === 'coincap') {
+        try {
+            const data = await fetchFromCoinCap();
+            if (data && Array.isArray(data) && data.length > 0) {
+                return processCoinData(data);
+            }
+        }
+        catch (error) {
+            cachedAPISource = null;
+            console.log("缓存的API源失败，切换到模拟数据");
+        }
+    }
+    else if (cachedAPISource === 'binance') {
+        try {
+            const data = await fetchFromBinance();
+            if (data && Array.isArray(data) && data.length > 0) {
+                return processCoinData(data);
+            }
+        }
+        catch (error) {
+            cachedAPISource = null;
+            console.log("缓存的API源失败，切换到模拟数据");
+        }
+    }
+    else if (cachedAPISource === 'mock') {
+        // 直接使用模拟数据
+        const mockData = generateMockData();
+        return processCoinData(mockData);
+    }
+    // 首次运行或缓存失效，按优先级尝试API
+    // 策略0: 优先使用CryptoCompare（有API密钥，最可靠）
+    try {
+        console.log("🔄 尝试从 CryptoCompare 获取数据（使用API密钥）...");
+        const data = await fetchFromCryptoCompare();
+        if (data && Array.isArray(data) && data.length > 0) {
+            cachedAPISource = 'cryptocompare';
+            console.log(`✅ CryptoCompare API 可用，已缓存，获取 ${data.length} 条数据`);
+            return processCoinData(data);
+        }
+    }
+    catch (error) {
+        console.log(`⚠️ CryptoCompare失败: ${error.message}，尝试其他API...`);
+    }
+    // 策略0.5: 使用CoinMarketCap（有API密钥）
+    try {
+        console.log("🔄 尝试从 CoinMarketCap 获取数据（使用API密钥）...");
+        const data = await fetchFromCoinMarketCap();
+        if (data && Array.isArray(data) && data.length > 0) {
+            cachedAPISource = 'coinmarketcap';
+            console.log(`✅ CoinMarketCap API 可用，已缓存，获取 ${data.length} 条数据`);
+            return processCoinData(data);
+        }
+    }
+    catch (error) {
+        console.log(`⚠️ CoinMarketCap失败: ${error.message}，尝试其他API...`);
+    }
+    // 策略1: 使用CoinGecko完整版（包含sparkline，数据最完整）
+    try {
+        console.log("🔄 尝试从 CoinGecko 获取完整数据（包含走势图）...");
+        const data = await fetchFromCoinGecko(true);
+        if (data && Array.isArray(data) && data.length > 0) {
+            cachedAPISource = 'coingecko';
+            console.log(`✅ CoinGecko API 可用，已缓存，获取 ${data.length} 条数据`);
+            return processCoinData(data);
+        }
+    }
+    catch (error) {
+        console.log(`⚠️ CoinGecko完整版失败: ${error.message}，尝试简化版...`);
+    }
+    // 策略1.5: 尝试CoinGecko简化版（不包含sparkline，但更快）
+    try {
+        console.log("🔄 尝试从 CoinGecko 获取简化数据...");
+        const data = await fetchFromCoinGecko(false);
+        if (data && Array.isArray(data) && data.length > 0) {
+            cachedAPISource = 'coingecko';
+            console.log(`✅ CoinGecko API 可用，已缓存，获取 ${data.length} 条数据`);
+            return processCoinData(data);
+        }
+    }
+    catch (error) {
+        console.log(`⚠️ CoinGecko简化版失败: ${error.message}`);
+    }
+    // 策略2: 尝试CoinCap（备用）
+    try {
+        console.log("🔄 尝试从 CoinCap 获取数据...");
+        const data = await fetchFromCoinCap();
+        if (data && Array.isArray(data) && data.length > 0) {
+            cachedAPISource = 'coincap';
+            console.log(`✅ CoinCap API 可用，已缓存，获取 ${data.length} 条数据`);
+            return processCoinData(data);
+        }
+    }
+    catch (error) {
+        console.log(`⚠️ CoinCap失败: ${error.message}`);
+    }
+    // 策略3: 尝试Binance（备用）
+    try {
+        console.log("🔄 尝试从 Binance 获取数据...");
+        const data = await fetchFromBinance();
+        if (data && Array.isArray(data) && data.length > 0) {
+            cachedAPISource = 'binance';
+            console.log(`✅ Binance API 可用，已缓存，获取 ${data.length} 条数据`);
+            return processCoinData(data);
+        }
+    }
+    catch (error) {
+        console.log(`⚠️ Binance失败: ${error.message}`);
+    }
+    // 策略4: 尝试从本地JSON文件加载（如果存在）
+    try {
+        console.log("🔄 尝试从本地数据文件加载...");
+        const localData = loadLocalData();
+        if (localData && Array.isArray(localData) && localData.length > 0) {
+            cachedAPISource = 'mock'; // 使用mock标记，但实际是本地数据
+            console.log(`✅ 本地数据文件可用，加载 ${localData.length} 条数据`);
+            return processCoinData(localData);
+        }
+    }
+    catch (error) {
+        console.log(`⚠️ 本地数据加载失败: ${error.message}`);
+    }
+    // 所有API都失败，使用模拟数据并缓存
+    console.log("⚠️ 所有API源均失败，使用模拟数据模式（数据会实时波动）");
+    console.log("💡 提示：如果网络受限，可以配置代理或使用VPN访问外部API");
+    console.log("💡 或者将真实数据保存到 server/data/coins-backup.json 文件中");
+    cachedAPISource = 'mock';
+    const mockData = generateMockData();
+    return processCoinData(mockData);
+}
+function processCoinData(data) {
+    if (!Array.isArray(data)) {
+        throw new Error("Invalid response format from API");
+    }
+    return data
+        .filter((coin) => {
+        // 过滤掉无效数据
+        return (coin &&
+            coin.id &&
+            coin.symbol &&
+            coin.name &&
+            coin.current_price != null &&
+            coin.current_price > 0 &&
+            coin.market_cap != null &&
+            coin.total_volume != null);
+    })
+        .map((coin) => {
+        // 处理可能为 null 的字段，确保数据类型正确
+        const priceChange24h = parseFloat(coin.price_change_percentage_24h) || 0;
+        const marketCap = parseFloat(coin.market_cap) || 0;
+        const totalVolume = parseFloat(coin.total_volume) || 0;
+        const currentPrice = parseFloat(coin.current_price) || 0;
+        // 计算流动性分数（避免除零）
+        const volScore = marketCap > 0
+            ? Math.min(1, totalVolume / marketCap)
+            : 0;
+        // 计算动量分数（标准化到 0-1）
+        const momentum = priceChange24h / 10;
+        const normalizedMomentum = Math.max(-1, Math.min(1, momentum));
+        // 综合评分
+        const score = Math.max(0, Math.min(1, 0.4 * volScore + 0.6 * (normalizedMomentum / 2 + 0.5)));
+        // 生成投资建议
+        let recommendation = "hold";
+        if (score > 0.75 && priceChange24h > 3) {
+            recommendation = "strong_buy";
+        }
+        else if (score > 0.6) {
+            recommendation = "buy";
+        }
+        else if (score < 0.3 && priceChange24h < -3) {
+            recommendation = "sell";
+        }
+        // 处理 sparkline 数据，确保格式和模拟数据一致
+        let sparklineData = coin.sparkline_in_7d?.price;
+        if (!sparklineData || !Array.isArray(sparklineData) || sparklineData.length === 0) {
+            // 如果没有 sparkline 数据，生成一个基于当前价格的7日走势
+            // 模拟过去7天的价格变化趋势
+            sparklineData = Array.from({ length: 7 }, (_, i) => {
+                const daysAgo = 6 - i;
+                // 基于24h涨跌幅，生成历史价格趋势
+                const trendFactor = 1 + (priceChange24h / 100) * (daysAgo / 7);
+                const randomVariation = (Math.random() - 0.5) * 0.05; // ±2.5%的随机波动
+                return currentPrice * trendFactor * (1 + randomVariation);
+            });
+        }
+        // 确保sparkline数据格式正确（数组，数值类型）
+        sparklineData = sparklineData.map((p) => {
+            const price = parseFloat(p) || currentPrice;
+            return Math.round(price * 10000) / 10000; // 保留4位小数，和模拟数据一致
+        });
+        // 生成智能解读
+        let insight = "";
+        try {
+            insight = generateInsight({
+                name: coin.name,
+                priceChange24h,
+                sparklineData,
+                marketCap,
+                totalVolume,
+                score,
+                recommendation,
+                currentPrice
+            });
+            // 确保insight不为空
+            if (!insight || insight.trim() === "") {
+                insight = `该币种当前价格为 $${currentPrice.toFixed(4)}，24小时涨跌幅为 ${priceChange24h.toFixed(2)}%。综合评分为 ${(score * 100).toFixed(0)} 分，投资建议为${recommendation === "strong_buy" ? "强烈买入" : recommendation === "buy" ? "买入" : recommendation === "hold" ? "观望" : "减持/卖出"}。`;
+            }
+        }
+        catch (error) {
+            console.error(`生成智能解读失败 (${coin.name}):`, error.message);
+            insight = `该币种当前价格为 $${currentPrice.toFixed(4)}，24小时涨跌幅为 ${priceChange24h.toFixed(2)}%。综合评分为 ${(score * 100).toFixed(0)} 分，投资建议为${recommendation === "strong_buy" ? "强烈买入" : recommendation === "buy" ? "买入" : recommendation === "hold" ? "观望" : "减持/卖出"}。`;
+        }
+        // 返回格式完全一致的数据（和模拟数据格式相同）
+        return {
+            id: coin.id,
+            symbol: coin.symbol.toLowerCase(),
+            name: coin.name,
+            current_price: Math.round(currentPrice * 10000) / 10000, // 保留4位小数
+            price_change_percentage_24h: Math.round(priceChange24h * 100) / 100, // 保留2位小数
+            market_cap: Math.round(marketCap), // 整数
+            total_volume: Math.round(totalVolume), // 整数
+            sparkline_in_7d: { price: sparklineData }, // 格式一致
+            score,
+            recommendation,
+            insight // 智能解读
+        };
+    });
+}
+async function getCoinDetail(id) {
+    try {
+        const [detailRes, marketChartRes] = await Promise.all([
+            axios_1.default.get(`${API_SOURCES.coingecko}/coins/${id}`, {
+                params: {
+                    localization: false,
+                    tickers: false,
+                    market_data: true,
+                    community_data: true,
+                    developer_data: true,
+                    sparkline: true
+                },
+                timeout: 15000
+            }),
+            axios_1.default.get(`${API_SOURCES.coingecko}/coins/${id}/market_chart`, {
+                params: {
+                    vs_currency: "usd",
+                    days: 30,
+                    interval: "hourly"
+                },
+                timeout: 15000
+            })
+        ]);
+        const detail = detailRes.data;
+        const chart = marketChartRes.data;
+        return {
+            id: detail.id,
+            symbol: detail.symbol,
+            name: detail.name,
+            description: detail.description?.en,
+            market_data: detail.market_data,
+            community_data: detail.community_data,
+            developer_data: detail.developer_data,
+            prices: chart.prices,
+            volumes: chart.total_volumes
+        };
+    }
+    catch (error) {
+        console.error("Error fetching coin detail:", error.message);
+        throw new Error(`Failed to fetch coin detail: ${error.message}`);
+    }
+}

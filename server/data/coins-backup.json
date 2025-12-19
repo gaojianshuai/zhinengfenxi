@@ -1,0 +1,123 @@
+[
+  {
+    "id": "bitcoin",
+    "symbol": "btc",
+    "name": "Bitcoin",
+    "current_price": 45000,
+    "price_change_percentage_24h": 2.5,
+    "market_cap": 900000000000,
+    "total_volume": 25000000000,
+    "sparkline_in_7d": {
+      "price": [44000, 44500, 44800, 45000, 45200, 45100, 45000]
+    }
+  },
+  {
+    "id": "ethereum",
+    "symbol": "eth",
+    "name": "Ethereum",
+    "current_price": 2800,
+    "price_change_percentage_24h": 1.8,
+    "market_cap": 350000000000,
+    "total_volume": 15000000000,
+    "sparkline_in_7d": {
+      "price": [2750, 2780, 2790, 2800, 2810, 2805, 2800]
+    }
+  },
+  {
+    "id": "binancecoin",
+    "symbol": "bnb",
+    "name": "BNB",
+    "current_price": 320,
+    "price_change_percentage_24h": 0.5,
+    "market_cap": 48000000000,
+    "total_volume": 2000000000,
+    "sparkline_in_7d": {
+      "price": [318, 319, 320, 321, 320, 320, 320]
+    }
+  },
+  {
+    "id": "solana",
+    "symbol": "sol",
+    "name": "Solana",
+    "current_price": 95,
+    "price_change_percentage_24h": -1.2,
+    "market_cap": 42000000000,
+    "total_volume": 1800000000,
+    "sparkline_in_7d": {
+      "price": [96, 95.5, 95, 94.5, 95, 95.2, 95]
+    }
+  },
+  {
+    "id": "cardano",
+    "symbol": "ada",
+    "name": "Cardano",
+    "current_price": 0.55,
+    "price_change_percentage_24h": 3.2,
+    "market_cap": 19500000000,
+    "total_volume": 500000000,
+    "sparkline_in_7d": {
+      "price": [0.53, 0.54, 0.55, 0.56, 0.55, 0.55, 0.55]
+    }
+  },
+  {
+    "id": "ripple",
+    "symbol": "xrp",
+    "name": "XRP",
+    "current_price": 0.62,
+    "price_change_percentage_24h": 1.5,
+    "market_cap": 34000000000,
+    "total_volume": 1200000000,
+    "sparkline_in_7d": {
+      "price": [0.61, 0.615, 0.62, 0.625, 0.62, 0.62, 0.62]
+    }
+  },
+  {
+    "id": "polkadot",
+    "symbol": "dot",
+    "name": "Polkadot",
+    "current_price": 7.2,
+    "price_change_percentage_24h": -0.8,
+    "market_cap": 9200000000,
+    "total_volume": 180000000,
+    "sparkline_in_7d": {
+      "price": [7.25, 7.22, 7.2, 7.18, 7.2, 7.21, 7.2]
+    }
+  },
+  {
+    "id": "dogecoin",
+    "symbol": "doge",
+    "name": "Dogecoin",
+    "current_price": 0.08,
+    "price_change_percentage_24h": 5.5,
+    "market_cap": 11500000000,
+    "total_volume": 800000000,
+    "sparkline_in_7d": {
+      "price": [0.076, 0.077, 0.078, 0.079, 0.08, 0.081, 0.08]
+    }
+  },
+  {
+    "id": "avalanche",
+    "symbol": "avax",
+    "name": "Avalanche",
+    "current_price": 38,
+    "price_change_percentage_24h": 2.1,
+    "market_cap": 14500000000,
+    "total_volume": 450000000,
+    "sparkline_in_7d": {
+      "price": [37.2, 37.5, 37.8, 38, 38.2, 38.1, 38]
+    }
+  },
+  {
+    "id": "chainlink",
+    "symbol": "link",
+    "name": "Chainlink",
+    "current_price": 14.5,
+    "price_change_percentage_24h": -2.3,
+    "market_cap": 8500000000,
+    "total_volume": 320000000,
+    "sparkline_in_7d": {
+      "price": [14.8, 14.6, 14.5, 14.4, 14.5, 14.5, 14.5]
+    }
+  }
+]
+

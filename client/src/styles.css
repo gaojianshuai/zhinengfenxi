@@ -1,0 +1,247 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Segoe UI", sans-serif;
+  background: radial-gradient(circle at top, #0f172a 0, #020617 40%, #000 100%);
+  color: #e5e7eb;
+}
+
+.app {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 32px 20px 48px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 28px;
+  letter-spacing: 0.08em;
+}
+
+.subtitle {
+  margin: 6px 0 0;
+  color: #9ca3af;
+  font-size: 14px;
+}
+
+.refresh {
+  border-radius: 999px;
+  border: 1px solid #22c55e33;
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: #020617;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 22px rgba(16, 185, 129, 0.35);
+}
+
+.refresh:disabled {
+  opacity: 0.6;
+  cursor: default;
+  box-shadow: none;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.controls input {
+  flex: 1 1 260px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  border: 1px solid #1f2937;
+  background: rgba(15, 23, 42, 0.9);
+  color: #e5e7eb;
+}
+
+.controls input:focus {
+  outline: 1px solid #38bdf8;
+  box-shadow: 0 0 0 1px #38bdf8;
+}
+
+.filters {
+  display: flex;
+  gap: 8px;
+}
+
+.filters button {
+  border-radius: 999px;
+  border: 1px solid #1f2937;
+  background: rgba(15, 23, 42, 0.8);
+  color: #9ca3af;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.filters button.active {
+  border-color: #38bdf8;
+  background: linear-gradient(135deg, #0ea5e9, #22c55e);
+  color: #020617;
+}
+
+.error {
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: rgba(248, 113, 113, 0.15);
+  border: 1px solid rgba(248, 113, 113, 0.6);
+  color: #fecaca;
+  margin-bottom: 16px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.error button {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid rgba(248, 113, 113, 0.8);
+  background: rgba(248, 113, 113, 0.2);
+  color: #fecaca;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.error button:hover {
+  background: rgba(248, 113, 113, 0.3);
+  border-color: #f87171;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  border-radius: 18px;
+  border: 1px solid #1f2937;
+  background: radial-gradient(circle at top left, #0b1120 0, #020617 55%);
+  padding: 16px 16px 14px;
+  box-shadow: 0 14px 35px rgba(15, 23, 42, 0.9);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.card-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.symbol {
+  font-size: 13px;
+  color: #9ca3af;
+  margin-left: 4px;
+}
+
+.price {
+  margin: 6px 0 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.tag-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.tag {
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #020617;
+}
+
+.score {
+  font-size: 11px;
+  color: #e5e7eb;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.metrics span {
+  display: block;
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.metrics strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+}
+
+.up-text {
+  color: #22c55e;
+}
+
+.down-text {
+  color: #f97316;
+}
+
+.chart-wrapper {
+  height: 90px;
+  margin-bottom: 8px;
+}
+
+.insight h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
+.insight p {
+  margin: 0;
+  font-size: 12px;
+  color: #9ca3af;
+  line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .filters {
+    flex-wrap: wrap;
+  }
+}
+
+
