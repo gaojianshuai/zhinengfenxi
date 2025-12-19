@@ -1,22 +1,12 @@
 {
   "version": 2,
+  "buildCommand": "npm run build",
+  "outputDirectory": "client/dist",
+  "installCommand": "npm install",
   "builds": [
     {
-      "src": "server/package.json",
-      "use": "@vercel/node",
-      "config": {
-        "includeFiles": [
-          "server/dist/**",
-          "server/data/**"
-        ]
-      }
-    },
-    {
-      "src": "client/package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist"
-      }
+      "src": "api/index.js",
+      "use": "@vercel/node"
     }
   ],
   "rewrites": [
@@ -26,7 +16,7 @@
     },
     {
       "source": "/(.*)",
-      "destination": "/client/dist/$1"
+      "destination": "/index.html"
     }
   ]
 }

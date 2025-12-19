@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
@@ -33,7 +34,7 @@ const recommendationColor: Record<CoinOverview["recommendation"], string> = {
 // 缓存键名
 const CACHE_KEY = 'crypto_data_cache';
 const CACHE_TIMESTAMP_KEY = 'crypto_data_timestamp';
-const CACHE_DURATION = 10 * 60 * 1000; // 10分钟缓存时间
+const CACHE_DURATION = 2 * 60 * 1000; // 2分钟缓存时间
 
 interface CacheData {
   data: CoinOverview[];
@@ -41,6 +42,7 @@ interface CacheData {
 }
 
 export function App() {
+  const navigate = useNavigate();
   const [coins, setCoins] = useState<CoinOverview[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -77,7 +79,7 @@ export function App() {
         const now = Date.now();
         const elapsed = now - cacheTime;
         
-        // 如果缓存未过期（10分钟内），返回缓存数据
+        // 如果缓存未过期（2分钟内），返回缓存数据
         if (elapsed < CACHE_DURATION && Array.isArray(data) && data.length > 0) {
           console.log(`✅ 使用缓存数据（距离上次更新 ${Math.floor(elapsed / 1000)} 秒）`);
           return data;
@@ -89,7 +91,7 @@ export function App() {
     return null;
   }
 
-  // 检查是否需要调用API（10分钟内使用缓存）
+  // 检查是否需要调用API（2分钟内使用缓存）
   function shouldFetchFromAPI(): boolean {
     const cachedData = loadFromCache();
     if (cachedData) {
@@ -103,10 +105,10 @@ export function App() {
   // 设置下一次刷新（仅在成功获取数据后调用）
   function scheduleNextRefresh() {
     clearRefreshTimer();
-    // 10分钟后刷新
+    // 2分钟后刷新
     refreshTimerRef.current = setTimeout(() => {
       loadData(0, false); // false表示不是初始加载
-    }, CACHE_DURATION); // 10分钟
+    }, CACHE_DURATION); // 2分钟
   }
 
   async function loadData(retryCount: number = 0, isInitial: boolean = true, forceRefresh: boolean = false) {
@@ -150,7 +152,7 @@ export function App() {
         if (hasCachedData) {
           console.log("✅ 最新数据已获取并更新");
         } else {
-          console.log("✅ 数据获取成功，已设置10分钟后自动刷新");
+          console.log("✅ 数据获取成功，已设置2分钟后自动刷新");
         }
         
         // 只有在成功获取数据后才设置下一次刷新
@@ -166,7 +168,7 @@ export function App() {
         }
         
         if (coins.length > 0 || cachedData) {
-          // 有现有数据或缓存数据，10分钟后重试
+          // 有现有数据或缓存数据，2分钟后重试
           clearRefreshTimer();
           scheduleNextRefresh();
         } else {
@@ -191,7 +193,7 @@ export function App() {
       if (coins.length > 0) {
         // 已有数据，静默失败，不显示任何错误
         clearRefreshTimer();
-        // 10分钟后再次尝试
+        // 2分钟后再次尝试
         scheduleNextRefresh();
         return;
       }
@@ -214,7 +216,7 @@ export function App() {
       
       // 失败时不设置自动刷新，避免频繁失败
       clearRefreshTimer();
-      // 10分钟后再次尝试
+      // 2分钟后再次尝试
       scheduleNextRefresh();
     } finally {
       setLoading(false);
@@ -248,16 +250,9 @@ export function App() {
           <p className="subtitle">实时行情 · 风险评级 · 智能投资建议</p>
         </div>
         <button className="refresh" onClick={() => {
-          // 手动刷新：检查缓存，如果10分钟内则使用缓存，否则强制刷新
-          const cachedData = loadFromCache();
-          if (cachedData) {
-            // 10分钟内有缓存，使用缓存数据
-            setCoins(cachedData);
-            console.log("✅ 手动刷新：使用缓存数据（10分钟内）");
-          } else {
-            // 缓存过期或不存在，强制刷新
-            loadData(0, true, true);
-          }
+          // 手动刷新：总是调用API获取最新数据
+          console.log("🔄 手动刷新：调用API获取最新数据");
+          loadData(0, true, true);
         }} disabled={loading}>
           {loading ? "更新中..." : "手动刷新"}
         </button>
@@ -317,7 +312,20 @@ export function App() {
 
       <section className="grid">
         {filtered.map((coin) => (
-          <article key={coin.id} className="card">
+          <article
+            key={coin.id}
+            className="card"
+            onClick={() => navigate(`/coin/${coin.id}`)}
+            style={{ cursor: "pointer", transition: "transform 0.2s" }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = "translateY(-4px)";
+              e.currentTarget.style.boxShadow = "0 8px 24px rgba(0, 0, 0, 0.4)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = "translateY(0)";
+              e.currentTarget.style.boxShadow = "";
+            }}
+          >
             <header className="card-header">
               <div>
                 <h2>

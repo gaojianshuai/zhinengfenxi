@@ -16,6 +16,10 @@ export default defineConfig({
   build: {
     outDir: "dist",
     assetsDir: "assets"
+  },
+  // 支持前端路由
+  preview: {
+    port: 5173
   }
 });
 

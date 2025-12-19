@@ -103,10 +103,31 @@ app.get("/api/coins/:id", async (req, res) => {
   try {
     await loadServerCode();
     const data = await getCoinDetail(req.params.id);
+    // 即使数据不完整，也返回数据（前端会处理）
     res.json(data);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to fetch coin detail" });
+    console.error("API Error:", err);
+    // 即使出错，也尝试返回一个基本的数据结构
+    res.json({
+      id: req.params.id,
+      symbol: req.params.id.toUpperCase(),
+      name: req.params.id,
+      description: "无法获取币种详细信息，请稍后重试。",
+      market_data: {
+        current_price: { usd: 0 },
+        market_cap: { usd: 0 },
+        total_volume: { usd: 0 },
+        price_change_percentage_24h: 0,
+        high_24h: { usd: 0 },
+        low_24h: { usd: 0 },
+        circulating_supply: 0,
+        total_supply: 0
+      },
+      community_data: {},
+      developer_data: {},
+      prices: [],
+      volumes: []
+    });
   }
 });
 
