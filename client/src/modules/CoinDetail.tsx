@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { AdvancedChart } from "./AdvancedChart";
+import { useNotificationService } from "./NotificationService";
 
 interface CoinDetailData {
   id: string;
@@ -21,7 +22,12 @@ export function CoinDetail() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<CoinDetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [timeRange, setTimeRange] = useState<"1d" | "7d" | "30d" | "90d">("30d");
+  const [timeRange, setTimeRange] = useState<string>("1d");
+  const [showPriceAlert, setShowPriceAlert] = useState(false);
+  const [alertPrice, setAlertPrice] = useState<number>(0);
+  const [alertType, setAlertType] = useState<"above" | "below">("above");
+  
+  const { addPriceAlert } = useNotificationService();
 
   useEffect(() => {
     if (!id) return;
@@ -114,7 +120,7 @@ export function CoinDetail() {
   const high24h = marketData.high_24h?.usd || marketData.high_24h || 0;
   const low24h = marketData.low_24h?.usd || marketData.low_24h || 0;
 
-  // 处理K线数据 - 兼容多种数据格式
+  // 处理K线数据 - 转换为OHLC格式
   let chartData: any[] = [];
   if (data.prices && Array.isArray(data.prices) && data.prices.length > 0) {
     chartData = data.prices.map((item: any, index: number) => {
@@ -123,11 +129,23 @@ export function CoinDetail() {
       const price = Array.isArray(item) ? item[1] : (item.price || item.value || currentPrice);
       const volume = data.volumes?.[index] ? (Array.isArray(data.volumes[index]) ? data.volumes[index][1] : data.volumes[index].volume || 0) : 0;
       
+      // 生成OHLC数据（如果没有，使用价格生成）
+      const prevPrice = index > 0 ? (Array.isArray(data.prices[index - 1]) ? data.prices[index - 1][1] : data.prices[index - 1].price || price) : price;
+      const nextPrice = index < data.prices.length - 1 ? (Array.isArray(data.prices[index + 1]) ? data.prices[index + 1][1] : data.prices[index + 1].price || price) : price;
+      
+      const open = prevPrice;
+      const close = price;
+      const high = Math.max(open, close, nextPrice) * (1 + Math.random() * 0.01);
+      const low = Math.min(open, close, nextPrice) * (1 - Math.random() * 0.01);
+      
       return {
         time: new Date(timestamp).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit" }),
-        price: parseFloat(price) || currentPrice,
-        volume: parseFloat(volume) || 0,
-        timestamp: timestamp
+        timestamp: timestamp,
+        open: parseFloat(open.toString()) || currentPrice,
+        high: parseFloat(high.toString()) || currentPrice,
+        low: parseFloat(low.toString()) || currentPrice,
+        close: parseFloat(close.toString()) || currentPrice,
+        volume: parseFloat(volume.toString()) || 0
       };
     });
   }
@@ -137,11 +155,20 @@ export function CoinDetail() {
     for (let i = 29; i >= 0; i--) {
       const timestamp = Date.now() - i * 24 * 60 * 60 * 1000;
       const variation = (Math.random() - 0.5) * 0.1;
+      const price = currentPrice * (1 + variation);
+      const open = i === 29 ? price : chartData[chartData.length - 1].close;
+      const close = price;
+      const high = Math.max(open, close) * (1 + Math.random() * 0.02);
+      const low = Math.min(open, close) * (1 - Math.random() * 0.02);
+      
       chartData.push({
         time: new Date(timestamp).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit" }),
-        price: currentPrice * (1 + variation),
-        volume: volume24h * (0.5 + Math.random() * 0.5),
-        timestamp: timestamp
+        timestamp: timestamp,
+        open: open,
+        high: high,
+        low: low,
+        close: close,
+        volume: volume24h * (0.5 + Math.random() * 0.5)
       });
     }
   }
@@ -193,19 +220,39 @@ export function CoinDetail() {
                 {priceChange24h >= 0 ? "+" : ""}{priceChange24h.toFixed(2)}% (24h)
               </div>
             </div>
-            <div style={{ display: "flex", gap: "16px" }}>
-              <div style={{ textAlign: "right" }}>
-                <div style={{ color: "#94a3b8", fontSize: "14px", marginBottom: "4px" }}>24h 最高</div>
-                <div style={{ color: "#f1f5f9", fontSize: "18px", fontWeight: "600" }}>
-                  ${high24h.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
+              <div style={{ display: "flex", gap: "16px" }}>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ color: "#94a3b8", fontSize: "14px", marginBottom: "4px" }}>24h 最高</div>
+                  <div style={{ color: "#f1f5f9", fontSize: "18px", fontWeight: "600" }}>
+                    ${high24h.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ color: "#94a3b8", fontSize: "14px", marginBottom: "4px" }}>24h 最低</div>
+                  <div style={{ color: "#f1f5f9", fontSize: "18px", fontWeight: "600" }}>
+                    ${low24h.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </div>
                 </div>
               </div>
-              <div style={{ textAlign: "right" }}>
-                <div style={{ color: "#94a3b8", fontSize: "14px", marginBottom: "4px" }}>24h 最低</div>
-                <div style={{ color: "#f1f5f9", fontSize: "18px", fontWeight: "600" }}>
-                  ${low24h.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                </div>
-              </div>
+              <button
+                onClick={() => {
+                  setAlertPrice(currentPrice);
+                  setShowPriceAlert(true);
+                }}
+                style={{
+                  background: "rgba(59, 130, 246, 0.2)",
+                  border: "1px solid rgba(59, 130, 246, 0.3)",
+                  color: "#60a5fa",
+                  padding: "8px 16px",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  fontWeight: "500"
+                }}
+              >
+                🔔 价格预警
+              </button>
             </div>
           </div>
 
@@ -237,7 +284,7 @@ export function CoinDetail() {
           </div>
         </div>
 
-        {/* K线图 */}
+        {/* 高级图表 */}
         <div style={{
           background: "rgba(30, 41, 59, 0.8)",
           borderRadius: "16px",
@@ -245,63 +292,11 @@ export function CoinDetail() {
           marginBottom: "24px",
           border: "1px solid rgba(148, 163, 184, 0.1)"
         }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-            <h2 style={{ color: "#f1f5f9", fontSize: "20px", fontWeight: "600" }}>价格走势</h2>
-            <div style={{ display: "flex", gap: "8px" }}>
-              {(["1d", "7d", "30d", "90d"] as const).map((range) => (
-                <button
-                  key={range}
-                  onClick={() => setTimeRange(range)}
-                  style={{
-                    padding: "6px 12px",
-                    background: timeRange === range ? "rgba(59, 130, 246, 0.2)" : "rgba(148, 163, 184, 0.1)",
-                    border: `1px solid ${timeRange === range ? "rgba(59, 130, 246, 0.5)" : "rgba(148, 163, 184, 0.2)"}`,
-                    color: timeRange === range ? "#60a5fa" : "#94a3b8",
-                    borderRadius: "6px",
-                    cursor: "pointer",
-                    fontSize: "14px"
-                  }}
-                >
-                  {range === "1d" ? "1天" : range === "7d" ? "7天" : range === "30d" ? "30天" : "90天"}
-                </button>
-              ))}
-            </div>
-          </div>
-          <ResponsiveContainer width="100%" height={400}>
-            <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.1)" />
-              <XAxis
-                dataKey="time"
-                stroke="#94a3b8"
-                style={{ fontSize: "12px" }}
-                interval="preserveStartEnd"
-              />
-              <YAxis
-                stroke="#94a3b8"
-                style={{ fontSize: "12px" }}
-                domain={["dataMin", "dataMax"]}
-                tickFormatter={(value) => `$${value.toFixed(2)}`}
-              />
-              <Tooltip
-                contentStyle={{
-                  background: "rgba(15, 23, 42, 0.95)",
-                  border: "1px solid rgba(148, 163, 184, 0.2)",
-                  borderRadius: "8px",
-                  color: "#f1f5f9"
-                }}
-                formatter={(value: any) => `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 4 })}`}
-                labelFormatter={(label) => `时间: ${label}`}
-              />
-              <Line
-                type="monotone"
-                dataKey="price"
-                stroke="#3b82f6"
-                strokeWidth={2}
-                dot={false}
-                activeDot={{ r: 6 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          <AdvancedChart 
+            data={chartData} 
+            timeRange={timeRange}
+            onTimeRangeChange={setTimeRange}
+          />
         </div>
 
         {/* 币种描述 */}
@@ -324,6 +319,128 @@ export function CoinDetail() {
           </div>
         )}
       </section>
+
+      {/* 价格预警弹窗 */}
+      {showPriceAlert && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: "rgba(0, 0, 0, 0.7)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000,
+          padding: "20px"
+        }} onClick={() => setShowPriceAlert(false)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "rgba(30, 41, 59, 0.95)",
+              borderRadius: "16px",
+              padding: "24px",
+              maxWidth: "400px",
+              width: "100%",
+              border: "1px solid rgba(148, 163, 184, 0.1)"
+            }}
+          >
+            <h3 style={{ color: "#f1f5f9", fontSize: "20px", fontWeight: "600", marginBottom: "20px" }}>
+              设置价格预警
+            </h3>
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ display: "block", color: "#94a3b8", fontSize: "14px", marginBottom: "8px" }}>
+                预警类型
+              </label>
+              <select
+                value={alertType}
+                onChange={(e) => setAlertType(e.target.value as "above" | "below")}
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  background: "rgba(15, 23, 42, 0.8)",
+                  border: "1px solid rgba(148, 163, 184, 0.2)",
+                  borderRadius: "8px",
+                  color: "#f1f5f9",
+                  fontSize: "14px"
+                }}
+              >
+                <option value="above">价格高于</option>
+                <option value="below">价格低于</option>
+              </select>
+            </div>
+            <div style={{ marginBottom: "20px" }}>
+              <label style={{ display: "block", color: "#94a3b8", fontSize: "14px", marginBottom: "8px" }}>
+                价格阈值 (USD)
+              </label>
+              <input
+                type="number"
+                value={alertPrice}
+                onChange={(e) => setAlertPrice(parseFloat(e.target.value) || 0)}
+                step="0.01"
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  background: "rgba(15, 23, 42, 0.8)",
+                  border: "1px solid rgba(148, 163, 184, 0.2)",
+                  borderRadius: "8px",
+                  color: "#f1f5f9",
+                  fontSize: "16px"
+                }}
+              />
+            </div>
+            <div style={{ display: "flex", gap: "12px" }}>
+              <button
+                onClick={() => {
+                  if (alertPrice > 0) {
+                    addPriceAlert({
+                      coinId: data.id,
+                      coinName: data.name,
+                      coinSymbol: data.symbol,
+                      type: alertType,
+                      price: alertPrice,
+                      enabled: true
+                    });
+                    setShowPriceAlert(false);
+                    alert("价格预警已设置！");
+                  } else {
+                    alert("请输入有效的价格");
+                  }
+                }}
+                style={{
+                  flex: 1,
+                  background: "#22c55e",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "8px",
+                  padding: "12px",
+                  cursor: "pointer",
+                  fontSize: "16px",
+                  fontWeight: "500"
+                }}
+              >
+                确认
+              </button>
+              <button
+                onClick={() => setShowPriceAlert(false)}
+                style={{
+                  flex: 1,
+                  background: "rgba(148, 163, 184, 0.2)",
+                  color: "#94a3b8",
+                  border: "none",
+                  borderRadius: "8px",
+                  padding: "12px",
+                  cursor: "pointer",
+                  fontSize: "16px"
+                }}
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

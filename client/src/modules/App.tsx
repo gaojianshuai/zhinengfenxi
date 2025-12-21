@@ -2,6 +2,8 @@ import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { useNotificationService } from "./NotificationService";
+import { NotificationBell } from "./NotificationBell";
 
 interface CoinOverview {
   id: string;
@@ -48,6 +50,9 @@ export function App() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "strong_buy" | "buy" | "hold" | "sell">("all");
   const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // 通知服务
+  const { checkPriceAlerts, checkRecommendationChanges, sendEventNotification } = useNotificationService();
 
   // 清除刷新定时器
   function clearRefreshTimer() {
@@ -68,7 +73,7 @@ export function App() {
   }
 
   // 从缓存加载数据
-  function loadFromCache(): CoinOverview[] | null {
+  function loadFromCache(allowExpired: boolean = false): CoinOverview[] | null {
     try {
       const cachedData = localStorage.getItem(CACHE_KEY);
       const timestamp = localStorage.getItem(CACHE_TIMESTAMP_KEY);
@@ -82,6 +87,12 @@ export function App() {
         // 如果缓存未过期（2分钟内），返回缓存数据
         if (elapsed < CACHE_DURATION && Array.isArray(data) && data.length > 0) {
           console.log(`✅ 使用缓存数据（距离上次更新 ${Math.floor(elapsed / 1000)} 秒）`);
+          return data;
+        }
+        
+        // 如果允许使用过期缓存（返回时使用），即使过期也返回缓存数据
+        if (allowExpired && Array.isArray(data) && data.length > 0) {
+          console.log(`✅ 使用过期缓存数据（距离上次更新 ${Math.floor(elapsed / 1000)} 秒），后台更新中...`);
           return data;
         }
       }
@@ -102,6 +113,75 @@ export function App() {
     return true;
   }
 
+  // 检查API返回的数据是否是模拟数据
+  // 模拟数据的特点：价格接近固定基础价格，变化幅度很小
+  function isMockData(data: CoinOverview[]): boolean {
+    if (!data || data.length === 0) return false;
+    
+    // 模拟数据的基础价格映射
+    const mockBasePrices: Record<string, number> = {
+      'bitcoin': 45000,
+      'ethereum': 2800,
+      'binancecoin': 320,
+      'solana': 95,
+      'cardano': 0.55,
+      'ripple': 0.62,
+      'polkadot': 7.2,
+      'dogecoin': 0.08,
+      'avalanche': 38,
+      'chainlink': 14.5,
+    };
+    
+    // 检查前几个币种的价格是否接近模拟数据的基础价格
+    let matchCount = 0;
+    const checkCount = Math.min(5, data.length);
+    
+    for (let i = 0; i < checkCount; i++) {
+      const coin = data[i];
+      const basePrice = mockBasePrices[coin.id];
+      if (basePrice) {
+        // 如果价格接近基础价格（差异在5%以内），可能是模拟数据
+        const priceDiff = Math.abs(coin.current_price - basePrice) / basePrice;
+        if (priceDiff < 0.05) {
+          matchCount++;
+        }
+      }
+    }
+    
+    // 如果大部分币种的价格都接近基础价格，很可能是模拟数据
+    return matchCount >= checkCount * 0.6;
+  }
+
+  // 比较新数据和缓存数据的质量，决定是否使用新数据
+  function shouldUseNewData(newData: CoinOverview[], cachedData: CoinOverview[] | null): boolean {
+    // 如果没有缓存数据，直接使用新数据
+    if (!cachedData || cachedData.length === 0) {
+      return true;
+    }
+    
+    // 如果新数据是模拟数据，不使用新数据
+    if (isMockData(newData)) {
+      console.log("⚠️ 检测到API返回的数据可能是模拟数据，保留缓存数据");
+      return false;
+    }
+    
+    // 检查新数据与缓存数据的差异是否合理
+    // 如果价格变化超过50%，可能是异常数据，不使用新数据
+    if (cachedData.length > 0 && newData.length > 0) {
+      const firstCached = cachedData[0];
+      const firstNew = newData.find(c => c.id === firstCached.id);
+      if (firstNew) {
+        const priceDiff = Math.abs(firstNew.current_price - firstCached.current_price) / firstCached.current_price;
+        if (priceDiff > 0.5) {
+          console.log("⚠️ 新数据与缓存数据差异过大，可能是异常数据，保留缓存数据");
+          return false;
+        }
+      }
+    }
+    
+    return true;
+  }
+
   // 设置下一次刷新（仅在成功获取数据后调用）
   function scheduleNextRefresh() {
     clearRefreshTimer();
@@ -113,9 +193,15 @@ export function App() {
 
   async function loadData(retryCount: number = 0, isInitial: boolean = true, forceRefresh: boolean = false) {
     // 如果是初始加载，先显示缓存数据（如果有），然后后台获取最新数据
+    // 返回时也优先显示缓存数据，避免显示虚拟数据
     let hasCachedData = false;
     if (isInitial && !forceRefresh) {
-      const cachedData = loadFromCache();
+      // 先尝试使用未过期的缓存
+      let cachedData = loadFromCache(false);
+      // 如果没有未过期的缓存，也使用过期缓存（避免显示虚拟数据）
+      if (!cachedData) {
+        cachedData = loadFromCache(true);
+      }
       if (cachedData) {
         // 立即显示缓存数据，提升用户体验
         setCoins(cachedData);
@@ -144,22 +230,49 @@ export function App() {
       });
       
       if (Array.isArray(res.data) && res.data.length > 0) {
-        // 成功获取数据，更新显示并保存到缓存
-        setCoins(res.data);
-        saveToCache(res.data);
-        
-        // 如果有缓存数据，说明是后台更新，给用户提示
-        if (hasCachedData) {
-          console.log("✅ 最新数据已获取并更新");
-        } else {
-          console.log("✅ 数据获取成功，已设置2分钟后自动刷新");
+        // 检查是否应该使用新数据（避免使用模拟数据）
+        let cachedDataForComparison = loadFromCache(false);
+        if (!cachedDataForComparison) {
+          cachedDataForComparison = loadFromCache(true);
         }
         
-        // 只有在成功获取数据后才设置下一次刷新
-        scheduleNextRefresh();
+        if (shouldUseNewData(res.data, cachedDataForComparison)) {
+          // 新数据质量良好，更新显示并保存到缓存
+          setCoins(res.data);
+          saveToCache(res.data);
+          
+          // 检查价格预警和投资建议变化
+          checkPriceAlerts(res.data);
+          checkRecommendationChanges(res.data);
+          
+          // 如果有缓存数据，说明是后台更新，给用户提示
+          if (hasCachedData) {
+            console.log("✅ 最新数据已获取并更新");
+          } else {
+            console.log("✅ 数据获取成功，已设置2分钟后自动刷新");
+          }
+          
+          // 只有在成功获取数据后才设置下一次刷新
+          scheduleNextRefresh();
+        } else {
+          // 新数据质量不佳（可能是模拟数据），保留缓存数据
+          if (cachedDataForComparison) {
+            setCoins(cachedDataForComparison);
+            console.log("⚠️ API返回的数据质量不佳，保留缓存数据");
+          } else {
+            // 如果没有缓存数据，即使质量不佳也使用新数据（总比没有好）
+            setCoins(res.data);
+            saveToCache(res.data);
+            console.log("⚠️ API返回的数据质量不佳，但无缓存数据，使用新数据");
+          }
+          scheduleNextRefresh();
+        }
       } else {
-        // 数据为空，尝试使用缓存
-        const cachedData = loadFromCache();
+        // 数据为空，尝试使用缓存（包括过期缓存）
+        let cachedData = loadFromCache(false);
+        if (!cachedData) {
+          cachedData = loadFromCache(true); // 尝试使用过期缓存
+        }
         if (cachedData) {
           setCoins(cachedData);
           console.log("⚠️ API返回空数据，使用缓存数据");
@@ -179,8 +292,11 @@ export function App() {
       // 静默处理所有错误，不显示任何错误提示
       console.log("⚠️ 数据获取失败，保持现有数据显示:", e.message);
       
-      // 如果已经有数据，尝试使用缓存
-      const cachedData = loadFromCache();
+      // 如果已经有数据，尝试使用缓存（包括过期缓存）
+      let cachedData = loadFromCache(false);
+      if (!cachedData) {
+        cachedData = loadFromCache(true); // 尝试使用过期缓存
+      }
       if (cachedData) {
         setCoins(cachedData);
         console.log("⚠️ API请求失败，使用缓存数据");
@@ -249,22 +365,225 @@ export function App() {
           <h1>数字货币智能分析平台</h1>
           <p className="subtitle">实时行情 · 风险评级 · 智能投资建议</p>
         </div>
-        <button className="refresh" onClick={() => {
-          // 手动刷新：总是调用API获取最新数据
-          console.log("🔄 手动刷新：调用API获取最新数据");
-          loadData(0, true, true);
-        }} disabled={loading}>
-          {loading ? "更新中..." : "手动刷新"}
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+          <button
+            onClick={() => navigate("/blockchain")}
+            style={{
+              background: "rgba(30, 41, 59, 0.6)",
+              border: "1px solid rgba(148, 163, 184, 0.15)",
+              borderRadius: "12px",
+              padding: "10px 20px",
+              color: "#94a3b8",
+              fontSize: "14px",
+              fontWeight: "500",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              transition: "all 0.3s ease",
+              backdropFilter: "blur(10px)"
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "rgba(59, 130, 246, 0.15)";
+              e.currentTarget.style.color = "#60a5fa";
+              e.currentTarget.style.borderColor = "rgba(59, 130, 246, 0.3)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "rgba(30, 41, 59, 0.6)";
+              e.currentTarget.style.color = "#94a3b8";
+              e.currentTarget.style.borderColor = "rgba(148, 163, 184, 0.15)";
+            }}
+          >
+            <span>🔗</span>
+            <span>区块链数据</span>
+          </button>
+          <button
+            onClick={() => navigate("/trading")}
+            style={{
+              background: "rgba(30, 41, 59, 0.6)",
+              border: "1px solid rgba(148, 163, 184, 0.15)",
+              borderRadius: "12px",
+              padding: "10px 20px",
+              color: "#94a3b8",
+              fontSize: "14px",
+              fontWeight: "500",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              transition: "all 0.3s ease",
+              backdropFilter: "blur(10px)"
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "rgba(34, 197, 94, 0.15)";
+              e.currentTarget.style.color = "#22c55e";
+              e.currentTarget.style.borderColor = "rgba(34, 197, 94, 0.3)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "rgba(30, 41, 59, 0.6)";
+              e.currentTarget.style.color = "#94a3b8";
+              e.currentTarget.style.borderColor = "rgba(148, 163, 184, 0.15)";
+            }}
+          >
+            <span>📈</span>
+            <span>交易中心</span>
+          </button>
+          <NotificationBell />
+          {localStorage.getItem("auth_token") ? (
+            <button
+              onClick={() => navigate("/profile")}
+              style={{
+                background: "rgba(30, 41, 59, 0.6)",
+                border: "1px solid rgba(148, 163, 184, 0.15)",
+                borderRadius: "12px",
+                padding: "10px 20px",
+                color: "#94a3b8",
+                fontSize: "14px",
+                fontWeight: "500",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                transition: "all 0.3s ease",
+                backdropFilter: "blur(10px)"
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(139, 92, 246, 0.15)";
+                e.currentTarget.style.color = "#a78bfa";
+                e.currentTarget.style.borderColor = "rgba(139, 92, 246, 0.3)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "rgba(30, 41, 59, 0.6)";
+                e.currentTarget.style.color = "#94a3b8";
+                e.currentTarget.style.borderColor = "rgba(148, 163, 184, 0.15)";
+              }}
+            >
+              <span>👤</span>
+              <span>个人中心</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => navigate("/auth")}
+              style={{
+                background: "linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)",
+                border: "none",
+                borderRadius: "12px",
+                padding: "10px 20px",
+                color: "white",
+                fontSize: "14px",
+                fontWeight: "600",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                transition: "all 0.3s ease",
+                boxShadow: "0 4px 12px rgba(59, 130, 246, 0.3)"
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-2px)";
+                e.currentTarget.style.boxShadow = "0 6px 16px rgba(59, 130, 246, 0.4)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow = "0 4px 12px rgba(59, 130, 246, 0.3)";
+              }}
+            >
+              <span>🔐</span>
+              <span>登录</span>
+            </button>
+          )}
+          <button className="refresh" onClick={() => {
+            // 手动刷新：总是调用API获取最新数据
+            console.log("🔄 手动刷新：调用API获取最新数据");
+            loadData(0, true, true);
+          }} disabled={loading}>
+            {loading ? "更新中..." : "手动刷新"}
+          </button>
+        </div>
       </header>
 
       <section className="controls">
-        <input
-          type="text"
-          placeholder="搜索币种名称 / 简写，例如 BTC, ETH..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+        <div style={{ display: "flex", gap: "12px", width: "100%", position: "relative" }}>
+          <div style={{ flex: 1, position: "relative" }}>
+            <input
+              type="text"
+              placeholder="搜索币种名称 / 简写，例如 BTC, ETH... 或输入交易哈希/地址"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                // 检测是否是区块链地址或hash
+                const input = e.target.value.trim();
+                if (input.startsWith("0x") && (input.length === 42 || input.length === 66)) {
+                  // 是地址或交易hash，显示提示
+                }
+              }}
+              onKeyPress={(e) => {
+                if (e.key === "Enter" && search.trim()) {
+                  const input = search.trim();
+                  // 检测是否是区块链地址或hash
+                  if (input.startsWith("0x") && (input.length === 42 || input.length === 66)) {
+                    // 跳转到区块链浏览器
+                    navigate(`/explorer?q=${encodeURIComponent(input)}`);
+                  } else if (/^\d+$/.test(input)) {
+                    // 是区块号
+                    navigate(`/explorer?q=${encodeURIComponent(input)}`);
+                  }
+                  // 否则继续币种搜索
+                }
+              }}
+              style={{ width: "100%" }}
+            />
+            {search.trim() && (search.trim().startsWith("0x") || /^\d+$/.test(search.trim())) && (
+              <div style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                right: 0,
+                marginTop: "4px",
+                padding: "8px 12px",
+                background: "rgba(59, 130, 246, 0.1)",
+                border: "1px solid rgba(59, 130, 246, 0.3)",
+                borderRadius: "8px",
+                color: "#60a5fa",
+                fontSize: "12px",
+                zIndex: 10,
+                cursor: "pointer"
+              }}
+              onClick={() => navigate(`/explorer?q=${encodeURIComponent(search.trim())}`)}
+              >
+                按 Enter 搜索区块链信息 →
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => navigate("/explorer")}
+            style={{
+              padding: "12px 20px",
+              background: "rgba(59, 130, 246, 0.1)",
+              border: "1px solid rgba(59, 130, 246, 0.3)",
+              borderRadius: "10px",
+              color: "#60a5fa",
+              fontSize: "14px",
+              fontWeight: "500",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              transition: "all 0.3s ease",
+              whiteSpace: "nowrap"
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "rgba(59, 130, 246, 0.2)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "rgba(59, 130, 246, 0.1)";
+            }}
+            title="搜索交易哈希、地址或区块号"
+          >
+            <span>🔍</span>
+            <span>区块链搜索</span>
+          </button>
+        </div>
         <div className="filters">
           {["all", "strong_buy", "buy", "hold", "sell"].map((key) => (
             <button

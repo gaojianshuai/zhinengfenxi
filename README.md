@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
+![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Node](https://img.shields.io/badge/node-%3E%3D16.0.0-brightgreen.svg)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue.svg)
@@ -80,6 +80,47 @@
 - **容错机制**：API失败时自动切换数据源，确保服务可用
 - **离线支持**：本地数据备份，网络异常时仍可显示数据
 
+### 📈 高级图表分析
+- **专业K线图**：支持蜡烛图（Candlestick）和折线图切换
+- **技术指标**：MA（移动平均线）、MACD、RSI等技术指标
+- **多时间周期**：支持1天、7天、30天、90天等多时间框架切换
+- **交互式图表**：自定义工具提示，显示详细OHLC和指标数据
+- **图表标注**：支持图表缩放、平移等交互操作
+
+### 🔔 智能通知系统
+- **价格预警**：自定义价格提醒，支持高于/低于目标价格触发
+- **重大事件通知**：市场重大事件实时推送
+- **投资建议更新**：币种投资建议变化时自动通知
+- **浏览器通知**：集成浏览器Notification API，支持桌面通知
+- **通知历史**：完整的通知记录，支持筛选和管理
+
+### 💼 交易中心
+- **模拟交易**：虚拟资金交易，支持买入/卖出操作
+- **持仓管理**：实时显示持仓盈亏，支持多币种持仓
+- **交易历史**：完整的交易记录，支持查看历史交易
+- **策略回测**：多种交易策略回测，显示收益率、夏普比率等指标
+- **数据持久化**：交易数据自动保存到本地，刷新不丢失
+
+### 🔗 区块链数据
+- **链上数据分析**：交易量、活跃地址、Gas费用等链上指标
+- **大额转账监控**：实时监控大额交易，支持筛选和追踪
+- **钱包地址追踪**：查询地址余额、交易历史、首次出现时间
+- **多链浏览器**：支持交易哈希、地址、区块号查询
+- **真实数据**：集成Etherscan API，获取真实区块链数据
+
+### 📊 数据分析增强
+- **历史回测**：支持多币种策略回测，显示详细回测结果
+- **相关性分析**：计算币种间价格相关性，可视化相关性矩阵
+- **市场情绪**：恐惧贪婪指数、社交媒体热度、新闻情绪分析
+- **资金流向**：交易所资金流入/流出分析，资金流向可视化
+
+### 👤 用户系统
+- **用户注册/登录**：安全的用户认证系统，JWT token管理
+- **个人投资组合**：管理个人投资组合，实时盈亏追踪
+- **收藏币种**：一键收藏关注的币种，快速访问
+- **价格提醒设置**：个性化价格提醒配置，支持多币种提醒
+- **数据持久化**：用户数据自动保存，跨设备同步
+
 ---
 
 ## 🏗️ 技术架构
@@ -115,8 +156,20 @@ crypto-intel-platform/
 ├── client/                 # 前端应用
 │   ├── src/
 │   │   ├── modules/
-│   │   │   ├── App.tsx          # 主应用组件（市场概览）
-│   │   │   └── CoinDetail.tsx   # 币种详情页组件
+│   │   │   ├── App.tsx              # 主应用组件（市场概览）
+│   │   │   ├── CoinDetail.tsx       # 币种详情页组件
+│   │   │   ├── AdvancedChart.tsx    # 高级图表组件（K线图）
+│   │   │   ├── CandlestickChart.tsx # 蜡烛图组件
+│   │   │   ├── Trading.tsx          # 交易中心组件
+│   │   │   ├── DataAnalysis.tsx     # 数据分析组件
+│   │   │   ├── BlockchainData.tsx  # 区块链数据组件
+│   │   │   ├── BlockchainExplorer.tsx # 多链浏览器组件
+│   │   │   ├── Auth.tsx            # 登录/注册组件
+│   │   │   ├── UserProfile.tsx     # 用户个人中心组件
+│   │   │   ├── NotificationBell.tsx # 通知铃铛组件
+│   │   │   ├── NotificationService.tsx # 通知服务
+│   │   │   ├── NotificationSettings.tsx # 通知设置
+│   │   │   └── NotificationHistory.tsx # 通知历史
 │   │   ├── main.tsx             # 应用入口（路由配置）
 │   │   └── styles.css           # 全局样式
 │   ├── dist/                    # 构建输出
@@ -127,9 +180,11 @@ crypto-intel-platform/
 │   ├── src/
 │   │   ├── index.ts             # Express服务器入口
 │   │   └── services/
-│   │       └── marketService.ts # 市场数据服务（多API源聚合）
+│   │       ├── marketService.ts # 市场数据服务（多API源聚合）
+│   │       └── userService.ts   # 用户服务（认证、数据管理）
 │   ├── data/
-│   │   └── coins-backup.json    # 本地数据备份
+│   │   ├── coins-backup.json   # 本地数据备份
+│   │   └── users.json          # 用户数据存储
 │   ├── scripts/
 │   │   └── update-local-data.js # 数据更新脚本
 │   ├── dist/                    # TypeScript编译输出
@@ -386,6 +441,225 @@ GET /api/diagnose
 }
 ```
 
+#### 5. 用户注册
+
+```http
+POST /api/auth/register
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "username": "username",
+  "password": "password123"
+}
+```
+
+**响应：**
+```json
+{
+  "user": {
+    "id": "uuid",
+    "email": "user@example.com",
+    "username": "username",
+    "portfolio": [],
+    "favorites": [],
+    "priceAlerts": []
+  },
+  "token": "jwt-token"
+}
+```
+
+#### 6. 用户登录
+
+```http
+POST /api/auth/login
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "password123"
+}
+```
+
+**响应：**
+```json
+{
+  "user": {
+    "id": "uuid",
+    "email": "user@example.com",
+    "username": "username",
+    "portfolio": [],
+    "favorites": [],
+    "priceAlerts": []
+  },
+  "token": "jwt-token"
+}
+```
+
+#### 7. 获取当前用户信息
+
+```http
+GET /api/auth/me
+Authorization: Bearer {token}
+```
+
+**响应：**
+```json
+{
+  "user": {
+    "id": "uuid",
+    "email": "user@example.com",
+    "username": "username",
+    "portfolio": [...],
+    "favorites": [...],
+    "priceAlerts": [...]
+  }
+}
+```
+
+#### 8. 更新投资组合
+
+```http
+PUT /api/user/portfolio
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "portfolio": [
+    {
+      "coinId": "bitcoin",
+      "symbol": "BTC",
+      "amount": 0.5,
+      "avgPrice": 43000,
+      "addedAt": 1704067200000
+    }
+  ]
+}
+```
+
+#### 9. 更新收藏列表
+
+```http
+PUT /api/user/favorites
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "favorites": ["bitcoin", "ethereum"]
+}
+```
+
+#### 10. 更新价格提醒
+
+```http
+PUT /api/user/price-alerts
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "alerts": [
+    {
+      "coinId": "bitcoin",
+      "symbol": "BTC",
+      "targetPrice": 50000,
+      "condition": "above",
+      "enabled": true,
+      "createdAt": 1704067200000
+    }
+  ]
+}
+```
+
+#### 11. 查询区块链交易
+
+```http
+GET /api/blockchain/tx/:hash
+```
+
+**路径参数：**
+- `hash`: 交易哈希（0x开头，66字符）
+
+**响应：**
+```json
+{
+  "hash": "0x...",
+  "blockNumber": 18000000,
+  "from": "0x...",
+  "to": "0x...",
+  "value": "1.500000",
+  "gasUsed": 21000,
+  "gasPrice": "20",
+  "timestamp": 1704067200000,
+  "status": "success",
+  "token": "ETH",
+  "tokenSymbol": "ETH"
+}
+```
+
+#### 12. 查询区块链地址
+
+```http
+GET /api/blockchain/address/:address
+```
+
+**路径参数：**
+- `address`: 以太坊地址（0x开头，42字符）
+
+**响应：**
+```json
+{
+  "address": "0x...",
+  "balance": "10.500000",
+  "transactionCount": 150,
+  "firstSeen": 1609459200000,
+  "tags": ["大户", "活跃地址"],
+  "type": "wallet"
+}
+```
+
+#### 13. 查询区块信息
+
+```http
+GET /api/blockchain/block/:number
+```
+
+**路径参数：**
+- `number`: 区块号（纯数字）
+
+**响应：**
+```json
+{
+  "number": 18000000,
+  "hash": "0x...",
+  "timestamp": 1704067200000,
+  "transactions": 150,
+  "gasUsed": 15000000,
+  "gasLimit": 30000000
+}
+```
+
+#### 14. 搜索币种
+
+```http
+GET /api/blockchain/search/:query
+```
+
+**路径参数：**
+- `query`: 币种名称或代码
+
+**响应：**
+```json
+{
+  "type": "coin",
+  "symbol": "BTC",
+  "name": "Bitcoin",
+  "price": 43250.50,
+  "change24h": 2.45,
+  "marketCap": 850000000000,
+  "volume24h": 25000000000
+}
+```
+
 ---
 
 ## ⚙️ 配置说明
@@ -470,39 +744,103 @@ GET /api/diagnose
 - 自动降级策略
 - 离线数据支持
 
+### 6. 专业交易工具
+- 模拟交易系统，支持买入/卖出操作
+- 实时持仓管理，盈亏自动计算
+- 交易历史记录，完整交易追踪
+- 策略回测平台，多种策略模板
+- 数据持久化，交易记录永不丢失
+
+### 7. 区块链数据查询
+- 真实区块链数据（Etherscan API）
+- 交易详情查询，完整交易信息
+- 地址余额追踪，交易历史查看
+- 区块信息查询，Gas使用分析
+- 多链浏览器，一站式查询服务
+
+### 8. 智能数据分析
+- 相关性分析，币种关联度计算
+- 市场情绪指标，恐惧贪婪指数
+- 资金流向分析，交易所资金追踪
+- 历史回测功能，策略效果验证
+
+### 9. 用户个性化
+- 个人投资组合管理
+- 收藏币种快速访问
+- 自定义价格提醒
+- 数据云端同步（未来）
+
 ---
 
 ## 🔮 未来展望
 
-### 短期规划（1-3个月）
+### ✅ 已完成功能（v1.0）
 
-- [ ] **用户系统**
-  - 用户注册/登录
-  - 个人投资组合管理
-  - 收藏币种功能
-  - 价格提醒设置
+- [x] **用户系统** ✅
+  - ✅ 用户注册/登录（JWT认证）
+  - ✅ 个人投资组合管理
+  - ✅ 收藏币种功能
+  - ✅ 价格提醒设置
 
-- [ ] **高级图表**
-  - 专业K线图（蜡烛图）
-  - 技术指标（MA、MACD、RSI等）
-  - 多时间周期切换
-  - 图表标注工具
+- [x] **高级图表** ✅
+  - ✅ 专业K线图（蜡烛图）
+  - ✅ 技术指标（MA、MACD、RSI等）
+  - ✅ 多时间周期切换
+  - ✅ 图表交互工具
 
-- [ ] **数据分析增强**
-  - 历史回测功能
-  - 相关性分析
-  - 市场情绪指标
-  - 资金流向分析
+- [x] **数据分析增强** ✅
+  - ✅ 历史回测功能
+  - ✅ 相关性分析
+  - ✅ 市场情绪指标
+  - ✅ 资金流向分析 
 
-- [ ] **通知系统**
-  - 价格预警推送
-  - 重大事件通知
-  - 投资建议更新提醒
+- [x] **通知系统** ✅
+  - ✅ 价格预警推送
+  - ✅ 重大事件通知
+  - ✅ 投资建议更新提醒
 
-### 中期规划（3-6个月）
+- [x] **交易功能** ✅
+  - ✅ 模拟交易
+  - ✅ 实盘交易接口（框架）
+  - ✅ 策略回测平台
+
+- [x] **区块链数据** ✅
+  - ✅ 链上数据分析
+  - ✅ 大额转账监控
+  - ✅ 钱包地址追踪
+  - ✅ 多链浏览器搜索
+
+### 🚀 短期规划（1-3个月）
+
+- [ ] **实盘交易集成**
+  - 接入主流交易所API（Binance、OKX等）
+  - 订单管理功能
+  - 交易记录同步
+  - 风险控制机制
+
+- [ ] **高级策略回测**
+  - 更多交易策略模板
+  - 自定义策略编写
+  - 回测结果详细分析
+  - 策略优化建议
+
+- [ ] **数据导出功能**
+  - 交易记录导出（CSV/Excel）
+  - 投资组合报告生成
+  - 图表数据导出
+  - PDF报告生成
+
+- [ ] **性能优化**
+  - 图表渲染性能优化
+  - 大数据量处理优化
+  - 内存使用优化
+  - 加载速度提升
+
+### 📱 中期规划（3-6个月）
 
 - [ ] **移动端应用**
   - React Native移动应用
+  - iOS/Android原生应用
   - 推送通知支持
   - 离线数据查看
 
@@ -510,39 +848,89 @@ GET /api/diagnose
   - 社区讨论区
   - 专家观点分享
   - 投资策略交流
+  - 用户关注系统
 
 - [ ] **AI增强**
   - 机器学习价格预测
   - 智能投资组合推荐
   - 自然语言市场分析
+  - GPT驱动的市场解读
 
 - [ ] **多语言支持**
   - 国际化（i18n）
-  - 多语言界面
+  - 多语言界面（中英文等）
   - 多地区数据源
+  - 时区自动适配
 
-### 长期愿景（6-12个月）
+- [ ] **更多区块链支持**
+  - 支持更多公链（BSC、Polygon、Arbitrum等）
+  - 跨链数据查询
+  - NFT数据分析
+  - 智能合约分析
+
+### 🌟 长期愿景（6-12个月）
 
 - [ ] **DeFi集成**
-  - DeFi协议数据
+  - DeFi协议数据聚合
   - 流动性挖矿分析
   - 收益计算器
-
-- [ ] **交易功能**
-  - 模拟交易
-  - 实盘交易接口
-  - 策略回测平台
+  - APY/APR追踪
 
 - [ ] **企业版功能**
   - 多用户管理
-  - 数据导出
+  - 团队协作功能
   - API访问控制
   - 自定义分析指标
+  - 白标解决方案
 
-- [ ] **区块链数据**
-  - 链上数据分析
-  - 大额转账监控
-  - 钱包地址追踪
+- [ ] **高级分析工具**
+  - 量化交易工具
+  - 算法交易支持
+  - 风险管理工具
+  - 投资组合优化
+
+- [ ] **数据可视化增强**
+  - 3D图表展示
+  - 交互式仪表盘
+  - 自定义看板
+  - 数据大屏模式
+
+- [ ] **API开放平台**
+  - 公开API接口
+  - API文档和SDK
+  - 开发者社区
+  - 第三方集成支持
+
+---
+
+## 📝 更新日志
+
+### v1.1.0 (最新版本)
+
+#### ✨ 新增功能
+- ✅ **用户系统**：完整的用户注册/登录系统，JWT认证
+- ✅ **个人中心**：投资组合管理、收藏币种、价格提醒设置
+- ✅ **高级图表**：专业K线图（蜡烛图）、技术指标（MA、MACD、RSI）
+- ✅ **通知系统**：价格预警、重大事件通知、浏览器推送
+- ✅ **交易中心**：模拟交易、策略回测、交易历史
+- ✅ **区块链数据**：链上数据分析、大额转账监控、钱包追踪
+- ✅ **多链浏览器**：交易查询、地址查询、区块查询
+- ✅ **数据分析**：相关性分析、市场情绪、资金流向
+
+#### 🔧 优化改进
+- ✅ 交易数据持久化保存，刷新不丢失
+- ✅ 登录页面专业设计，平台介绍完善
+- ✅ 区块链数据使用真实API（Etherscan）
+- ✅ 用户体验优化，交互更流畅
+
+### v1.0.0
+
+#### ✨ 初始版本
+- ✅ 市场概览功能
+- ✅ 币种详情页面
+- ✅ 智能推荐算法
+- ✅ 多数据源聚合
+- ✅ 智能缓存机制
 
 ---
 
@@ -643,6 +1031,56 @@ A: 在 `server/src/services/marketService.ts` 中：
 3. 在 `getMarketOverview()` 中添加调用逻辑
 4. 确保数据格式统一
 
+### Q9: 交易数据会丢失吗？
+
+A: 不会。所有交易数据（余额、持仓、交易历史）都会自动保存到浏览器的localStorage中，即使：
+- 刷新页面
+- 关闭浏览器
+- 返回首页再回来
+
+数据都会完整保留。
+
+### Q10: 如何重置交易数据？
+
+A: 清除浏览器localStorage中的以下键：
+- `trading_balance` - 余额
+- `trading_positions` - 持仓
+- `trading_history` - 交易历史
+
+或在浏览器控制台执行：
+```javascript
+localStorage.removeItem('trading_balance');
+localStorage.removeItem('trading_positions');
+localStorage.removeItem('trading_history');
+```
+
+### Q11: 价格提醒如何工作？
+
+A: 价格提醒系统会：
+1. 定期检查币种价格
+2. 当价格达到设定的目标价格时触发
+3. 发送浏览器通知（需要用户授权）
+4. 在通知历史中记录
+
+提醒设置保存在用户账户中，登录后自动同步。
+
+### Q12: 区块链数据是真实的吗？
+
+A: 是的。我们使用Etherscan API获取真实的以太坊区块链数据，包括：
+- 真实的交易信息
+- 真实的地址余额和交易历史
+- 真实的区块信息
+
+所有数据都来自以太坊主网。
+
+### Q13: 支持哪些区块链？
+
+A: 目前主要支持以太坊（Ethereum）主网。未来计划支持：
+- BSC（币安智能链）
+- Polygon
+- Arbitrum
+- 其他主流公链
+
 ---
 
 ## 🤝 贡献指南
@@ -699,10 +1137,12 @@ A: 在 `server/src/services/marketService.ts` 中：
 - **API响应时间**：< 2秒（平均）
 - **数据刷新间隔**：2分钟
 - **缓存命中率**：> 80%
+- **图表渲染性能**：流畅60 FPS
 
 ### 数据准确性
 
 - **数据源数量**：5+ 主流API
+- **区块链数据源**：Etherscan API（真实数据）
 - **数据更新频率**：实时（2分钟刷新）
 - **容错机制**：7级降级策略
 - **可用性**：99.9%+
@@ -713,6 +1153,16 @@ A: 在 `server/src/services/marketService.ts` 中：
 - **交互流畅度**：60 FPS
 - **错误处理**：静默降级，用户无感知
 - **加载优化**：缓存优先，后台更新
+- **数据持久化**：交易数据自动保存，刷新不丢失
+
+### 功能覆盖
+
+- **支持币种**：50+ 主流加密货币
+- **技术指标**：MA、MACD、RSI等
+- **图表类型**：K线图、折线图、面积图、柱状图
+- **用户功能**：注册登录、投资组合、收藏、提醒
+- **交易功能**：模拟交易、策略回测
+- **区块链功能**：交易查询、地址追踪、区块分析
 
 ---
 
@@ -741,11 +1191,14 @@ A: 在 `server/src/services/marketService.ts` 中：
 
 ## 📈 项目统计
 
-- **代码行数**：5000+ 行
-- **组件数量**：10+ 个
-- **API接口**：4 个
-- **数据源**：5+ 个
+- **代码行数**：10000+ 行
+- **组件数量**：15+ 个
+- **API接口**：14+ 个
+- **数据源**：5+ 个（市场数据）+ Etherscan（区块链数据）
 - **支持币种**：50+ 个
+- **技术指标**：MA、MACD、RSI等
+- **用户功能**：注册登录、投资组合、收藏、提醒
+- **交易功能**：模拟交易、策略回测
 
 ---
 

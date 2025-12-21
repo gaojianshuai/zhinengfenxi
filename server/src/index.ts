@@ -2,11 +2,21 @@ import express from "express";
 import cors from "cors";
 import axios from "axios";
 import { getMarketOverview, getCoinDetail } from "./services/marketService";
+import {
+  registerUser,
+  loginUser,
+  getUserById,
+  updatePortfolio,
+  updateFavorites,
+  updatePriceAlerts,
+  verifyToken
+} from "./services/userService";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 
 app.use(cors());
+app.use(express.json()); // 支持JSON请求体
 
 app.get("/api/overview", async (req, res) => {
   try {
@@ -155,6 +165,437 @@ app.get("/api/coins/:id", async (req, res) => {
       prices: [],
       volumes: []
     });
+  }
+});
+
+// 区块链浏览器API端点
+// 查询交易信息
+app.get("/api/blockchain/tx/:hash", async (req, res) => {
+  try {
+    const hash = req.params.hash;
+    if (!hash || !hash.startsWith("0x") || hash.length !== 66) {
+      return res.status(400).json({ error: "无效的交易哈希格式" });
+    }
+
+    // 使用Etherscan API查询交易
+    const etherscanUrl = "https://api.etherscan.io/api";
+    const response = await axios.get(etherscanUrl, {
+      params: {
+        module: "proxy",
+        action: "eth_getTransactionByHash",
+        txhash: hash,
+        apikey: "YourApiKeyToken" // 免费API，可以不加key，但有限制
+      },
+      timeout: 10000
+    });
+
+    if (response.data.error) {
+      throw new Error(response.data.error.message || "查询失败");
+    }
+
+    const tx = response.data.result;
+    if (!tx || tx === null) {
+      return res.status(404).json({ error: "交易未找到" });
+    }
+
+    // 获取交易回执以获取gasUsed和状态
+    const receiptResponse = await axios.get(etherscanUrl, {
+      params: {
+        module: "proxy",
+        action: "eth_getTransactionReceipt",
+        txhash: hash,
+        apikey: "YourApiKeyToken"
+      },
+      timeout: 10000
+    });
+
+    const receipt = receiptResponse.data.result;
+    const gasUsed = receipt ? parseInt(receipt.gasUsed, 16) : 0;
+    const status = receipt && receipt.status ? (parseInt(receipt.status, 16) === 1 ? "success" : "failed") : "pending";
+
+    // 获取区块信息以获取时间戳
+    let timestamp = Date.now();
+    if (tx.blockNumber) {
+      try {
+        const blockResponse = await axios.get(etherscanUrl, {
+          params: {
+            module: "proxy",
+            action: "eth_getBlockByNumber",
+            tag: tx.blockNumber,
+            boolean: "true",
+            apikey: "YourApiKeyToken"
+          },
+          timeout: 10000
+        });
+        if (blockResponse.data.result && blockResponse.data.result.timestamp) {
+          timestamp = parseInt(blockResponse.data.result.timestamp, 16) * 1000;
+        }
+      } catch (e) {
+        console.log("获取区块时间戳失败，使用当前时间");
+      }
+    }
+
+    // 转换数据格式
+    const value = tx.value ? (parseInt(tx.value, 16) / 1e18).toFixed(6) : "0";
+    const gasPrice = tx.gasPrice ? (parseInt(tx.gasPrice, 16) / 1e9).toFixed(0) : "0";
+
+    res.json({
+      hash: tx.hash,
+      blockNumber: tx.blockNumber ? parseInt(tx.blockNumber, 16) : 0,
+      from: tx.from,
+      to: tx.to || "",
+      value: value,
+      gasUsed: gasUsed,
+      gasPrice: gasPrice,
+      timestamp: timestamp,
+      status: status,
+      token: "ETH",
+      tokenSymbol: "ETH"
+    });
+  } catch (err: any) {
+    console.error("查询交易失败:", err.message);
+    res.status(500).json({ error: err.message || "查询交易失败，请稍后重试" });
+  }
+});
+
+// 查询地址信息
+app.get("/api/blockchain/address/:address", async (req, res) => {
+  try {
+    const address = req.params.address;
+    if (!address || !address.startsWith("0x") || address.length !== 42) {
+      return res.status(400).json({ error: "无效的地址格式" });
+    }
+
+    // 使用Etherscan API查询地址余额和交易
+    const etherscanUrl = "https://api.etherscan.io/api";
+    
+    const [balanceResponse, txListResponse] = await Promise.all([
+      axios.get(etherscanUrl, {
+        params: {
+          module: "account",
+          action: "balance",
+          address: address,
+          tag: "latest",
+          apikey: "YourApiKeyToken"
+        },
+        timeout: 10000
+      }),
+      axios.get(etherscanUrl, {
+        params: {
+          module: "account",
+          action: "txlist",
+          address: address,
+          startblock: 0,
+          endblock: 99999999,
+          page: 1,
+          offset: 1,
+          sort: "asc",
+          apikey: "YourApiKeyToken"
+        },
+        timeout: 10000
+      })
+    ]);
+
+    if (balanceResponse.data.status !== "1" && balanceResponse.data.message !== "OK") {
+      throw new Error(balanceResponse.data.message || "查询失败");
+    }
+
+    const balance = balanceResponse.data.result ? (parseInt(balanceResponse.data.result, 10) / 1e18).toFixed(6) : "0";
+    const transactions = txListResponse.data.result || [];
+    const transactionCount = transactions.length;
+    const firstSeen = transactions.length > 0 ? parseInt(transactions[0].timeStamp) * 1000 : Date.now();
+
+    // 检查是否是合约地址
+    const codeResponse = await axios.get(etherscanUrl, {
+      params: {
+        module: "proxy",
+        action: "eth_getCode",
+        address: address,
+        tag: "latest",
+        apikey: "YourApiKeyToken"
+      },
+      timeout: 10000
+    });
+
+    const isContract = codeResponse.data.result && codeResponse.data.result !== "0x";
+
+    // 简单的标签识别（可以根据需要扩展）
+    const tags: string[] = [];
+    if (parseFloat(balance) > 1000) {
+      tags.push("大户");
+    }
+    if (transactionCount > 10000) {
+      tags.push("活跃地址");
+    }
+
+    res.json({
+      address: address,
+      balance: balance,
+      transactionCount: transactionCount,
+      firstSeen: firstSeen,
+      tags: tags,
+      type: isContract ? "contract" : "wallet"
+    });
+  } catch (err: any) {
+    console.error("查询地址失败:", err.message);
+    res.status(500).json({ error: err.message || "查询地址失败，请稍后重试" });
+  }
+});
+
+// 查询区块信息
+app.get("/api/blockchain/block/:number", async (req, res) => {
+  try {
+    const blockNumber = req.params.number;
+    if (!/^\d+$/.test(blockNumber)) {
+      return res.status(400).json({ error: "无效的区块号格式" });
+    }
+
+    // 使用Etherscan API查询区块
+    const etherscanUrl = "https://api.etherscan.io/api";
+    const response = await axios.get(etherscanUrl, {
+      params: {
+        module: "proxy",
+        action: "eth_getBlockByNumber",
+        tag: `0x${parseInt(blockNumber).toString(16)}`,
+        boolean: "true",
+        apikey: "YourApiKeyToken"
+      },
+      timeout: 10000
+    });
+
+    if (response.data.error) {
+      throw new Error(response.data.error.message || "查询失败");
+    }
+
+    const block = response.data.result;
+    if (!block || block === null) {
+      return res.status(404).json({ error: "区块未找到" });
+    }
+
+    const timestamp = block.timestamp ? parseInt(block.timestamp, 16) * 1000 : Date.now();
+    const transactions = block.transactions ? block.transactions.length : 0;
+    const gasUsed = block.gasUsed ? parseInt(block.gasUsed, 16) : 0;
+    const gasLimit = block.gasLimit ? parseInt(block.gasLimit, 16) : 0;
+
+    res.json({
+      number: parseInt(blockNumber),
+      hash: block.hash,
+      timestamp: timestamp,
+      transactions: transactions,
+      gasUsed: gasUsed,
+      gasLimit: gasLimit
+    });
+  } catch (err: any) {
+    console.error("查询区块失败:", err.message);
+    res.status(500).json({ error: err.message || "查询区块失败，请稍后重试" });
+  }
+});
+
+// 搜索币种（使用CryptoCompare或CoinMarketCap）
+app.get("/api/blockchain/search/:query", async (req, res) => {
+  try {
+    const query = req.params.query.toLowerCase();
+    
+    // 尝试从CryptoCompare获取币种信息
+    const CRYPTOCOMPARE_API_KEY = "32a4a0ad3f972271ffdfc992ba2a63b0a9fa9e17558836cb6dff452f187233cb";
+    try {
+      const response = await axios.get("https://min-api.cryptocompare.com/data/pricemultifull", {
+        params: {
+          fsyms: query.toUpperCase(),
+          tsyms: "USD"
+        },
+        headers: {
+          authorization: `Apikey ${CRYPTOCOMPARE_API_KEY}`
+        },
+        timeout: 10000
+      });
+
+      const data = response.data?.RAW?.[query.toUpperCase()]?.USD;
+      if (data) {
+        return res.json({
+          type: "coin",
+          symbol: query.toUpperCase(),
+          name: query,
+          price: data.PRICE,
+          change24h: data.CHANGEPCT24HOUR,
+          marketCap: data.MKTCAP,
+          volume24h: data.VOLUME24HOURTO
+        });
+      }
+    } catch (e) {
+      console.log("CryptoCompare查询失败，尝试CoinMarketCap");
+    }
+
+    // 尝试从CoinMarketCap获取币种信息
+    const COINMARKETCAP_API_KEY = "931662f2eaa4447685061867557d06e6";
+    try {
+      const response = await axios.get("https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest", {
+        params: {
+          symbol: query.toUpperCase(),
+          convert: "USD"
+        },
+        headers: {
+          "X-CMC_PRO_API_KEY": COINMARKETCAP_API_KEY
+        },
+        timeout: 10000
+      });
+
+      const coinData = response.data?.data;
+      if (coinData && Object.keys(coinData).length > 0) {
+        const coin = Object.values(coinData)[0] as any;
+        const quote = coin.quote?.USD || {};
+        return res.json({
+          type: "coin",
+          symbol: coin.symbol,
+          name: coin.name,
+          price: quote.price,
+          change24h: quote.percent_change_24h,
+          marketCap: quote.market_cap,
+          volume24h: quote.volume_24h
+        });
+      }
+    } catch (e) {
+      console.log("CoinMarketCap查询失败");
+    }
+
+    res.status(404).json({ error: "未找到相关信息" });
+  } catch (err: any) {
+    console.error("搜索失败:", err.message);
+    res.status(500).json({ error: err.message || "搜索失败，请稍后重试" });
+  }
+});
+
+// 用户认证中间件
+function authenticateToken(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1]; // Bearer TOKEN
+
+  if (!token) {
+    return res.status(401).json({ error: "未授权，请先登录" });
+  }
+
+  const payload = verifyToken(token);
+  if (!payload) {
+    return res.status(403).json({ error: "Token无效或已过期" });
+  }
+
+  (req as any).userId = payload.userId;
+  next();
+}
+
+// 用户注册
+app.post("/api/auth/register", async (req, res) => {
+  try {
+    const { email, username, password } = req.body;
+    
+    if (!email || !username || !password) {
+      return res.status(400).json({ error: "请填写所有必填字段" });
+    }
+    
+    if (password.length < 6) {
+      return res.status(400).json({ error: "密码长度至少6位" });
+    }
+    
+    const result = registerUser(email, username, password);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || "注册失败" });
+  }
+});
+
+// 用户登录
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    
+    if (!email || !password) {
+      return res.status(400).json({ error: "请填写邮箱和密码" });
+    }
+    
+    const result = loginUser(email, password);
+    res.json(result);
+  } catch (err: any) {
+    res.status(401).json({ error: err.message || "登录失败" });
+  }
+});
+
+// 获取当前用户信息
+app.get("/api/auth/me", authenticateToken, async (req, res) => {
+  try {
+    const userId = (req as any).userId;
+    const user = getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ error: "用户不存在" });
+    }
+    res.json({ user });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "获取用户信息失败" });
+  }
+});
+
+// 更新投资组合
+app.put("/api/user/portfolio", authenticateToken, async (req, res) => {
+  try {
+    const userId = (req as any).userId;
+    const { portfolio } = req.body;
+    
+    if (!Array.isArray(portfolio)) {
+      return res.status(400).json({ error: "投资组合数据格式错误" });
+    }
+    
+    const success = updatePortfolio(userId, portfolio);
+    if (success) {
+      const user = getUserById(userId);
+      res.json({ portfolio: user?.portfolio || [] });
+    } else {
+      res.status(404).json({ error: "用户不存在" });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "更新投资组合失败" });
+  }
+});
+
+// 更新收藏列表
+app.put("/api/user/favorites", authenticateToken, async (req, res) => {
+  try {
+    const userId = (req as any).userId;
+    const { favorites } = req.body;
+    
+    if (!Array.isArray(favorites)) {
+      return res.status(400).json({ error: "收藏列表数据格式错误" });
+    }
+    
+    const success = updateFavorites(userId, favorites);
+    if (success) {
+      const user = getUserById(userId);
+      res.json({ favorites: user?.favorites || [] });
+    } else {
+      res.status(404).json({ error: "用户不存在" });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "更新收藏列表失败" });
+  }
+});
+
+// 更新价格提醒
+app.put("/api/user/price-alerts", authenticateToken, async (req, res) => {
+  try {
+    const userId = (req as any).userId;
+    const { alerts } = req.body;
+    
+    if (!Array.isArray(alerts)) {
+      return res.status(400).json({ error: "价格提醒数据格式错误" });
+    }
+    
+    const success = updatePriceAlerts(userId, alerts);
+    if (success) {
+      const user = getUserById(userId);
+      res.json({ alerts: user?.priceAlerts || [] });
+    } else {
+      res.status(404).json({ error: "用户不存在" });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "更新价格提醒失败" });
   }
 });
 

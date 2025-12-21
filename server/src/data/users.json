@@ -1,0 +1,36 @@
+[
+  {
+    "id": "135c2ca2-6e36-4526-89fc-1c1cee21c368",
+    "email": "testops_jianshuai@126.com",
+    "username": "gaojs",
+    "passwordHash": "c5217a0c78b966bb240391a73536f80dd76181dfd2d2609c0323cdfbe7c5928a",
+    "createdAt": 1766331699479,
+    "portfolio": [
+      {
+        "coinId": "eth",
+        "symbol": "eth",
+        "amount": 10,
+        "avgPrice": 3000,
+        "addedAt": 1766331761511
+      },
+      {
+        "coinId": "btc",
+        "symbol": "btc",
+        "amount": 10,
+        "avgPrice": 80000,
+        "addedAt": 1766331776983
+      }
+    ],
+    "favorites": [],
+    "priceAlerts": [
+      {
+        "coinId": "btc",
+        "symbol": "btc",
+        "targetPrice": 80000,
+        "condition": "below",
+        "enabled": false,
+        "createdAt": 1766331802663
+      }
+    ]
+  }
+]
